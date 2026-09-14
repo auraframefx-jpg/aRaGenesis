@@ -1,7 +1,0 @@
-C:\Users\AuraF\New folder\aurakai-cognitive-kernel\kernel-core\src\main\kotlin\dev\aurakai\kernel\engine\CognitiveKernel.kt
-C:\Users\AuraF\New folder\aurakai-cognitive-kernel\kernel-core\src\main\kotlin\dev\aurakai\kernel\bridge\DesktopKernelBridge.kt
-C:\Users\AuraF\New folder\aurakai-cognitive-kernel\kernel-core\src\main\kotlin\dev\aurakai\kernel\domain\EpistemicModels.kt
-C:\Users\AuraF\New folder\aurakai-cognitive-kernel\kernel-core\src\main\kotlin\dev\aurakai\kernel\dsl\KernelDsl.kt
-C:\Users\AuraF\New folder\aurakai-cognitive-kernel\kernel-core\src\main\kotlin\dev\aurakai\kernel\router\CapabilityRouter.kt
-C:\Users\AuraF\New folder\aurakai-cognitive-kernel\kernel-core\src\main\kotlin\dev\aurakai\kernel\domain\ReceiptModels.kt
-C:\Users\AuraF\New folder\aurakai-cognitive-kernel\kernel-core\src\main\kotlin\dev\aurakai\kernel\engine\VerificationGate.kt

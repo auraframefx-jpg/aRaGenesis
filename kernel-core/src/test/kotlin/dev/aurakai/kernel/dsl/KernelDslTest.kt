@@ -15,7 +15,7 @@ class KernelDslTest {
             override fun classifyRelationship(targetClaim: String, item: RawEvidenceItem) = EvidenceRelationship.SUPPORTS
         },
         object : IndependenceResolver {
-            override fun resolveGroup(item: RawEvidenceItem) = "origin-canon-core"
+            override fun resolveGroup(item: RawEvidenceItem) = "origin-${item.authorId}"
         },
         object : FalsifyEngine {
             override fun challenge(claim: String, items: List<ResolvedEvidenceItem>) = FalsificationResult(true, "")
@@ -45,7 +45,7 @@ class KernelDslTest {
 
             evidence {
                 item("ev-01", "Support", "author", SourceType.CANON)
-                item("ev-02", "Support", "author", SourceType.CANON)
+                item("ev-02", "Support", "external-auditor", SourceType.EXTERNAL_AUDIT)
             }
         }
 

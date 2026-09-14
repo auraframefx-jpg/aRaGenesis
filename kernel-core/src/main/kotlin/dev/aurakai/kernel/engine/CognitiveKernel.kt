@@ -3,7 +3,7 @@ package dev.aurakai.kernel.engine
 import dev.aurakai.kernel.domain.*
 import java.security.MessageDigest
 
-class CognitiveKernel(
+open class CognitiveKernel(
     private val relationshipClassifier: RelationshipClassifier,
     private val independenceResolver: IndependenceResolver,
     private val falsifyEngine: FalsifyEngine,
