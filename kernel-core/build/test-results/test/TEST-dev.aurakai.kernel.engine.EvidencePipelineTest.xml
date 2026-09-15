@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="dev.aurakai.kernel.engine.EvidencePipelineTest" tests="2" skipped="0" failures="0" errors="0" timestamp="2026-09-14T21:51:49.495Z" hostname="AURAKAI" time="0.008">
-  <properties/>
-  <testcase name="three internal agent repetitions collapse to one independence group()" classname="dev.aurakai.kernel.engine.EvidencePipelineTest" time="0.005"/>
-  <testcase name="audit refutation is correctly classified as CONTRADICTS()" classname="dev.aurakai.kernel.engine.EvidencePipelineTest" time="0.002"/>
-  <system-out><![CDATA[]]></system-out>
-  <system-err><![CDATA[]]></system-err>
-</testsuite>
