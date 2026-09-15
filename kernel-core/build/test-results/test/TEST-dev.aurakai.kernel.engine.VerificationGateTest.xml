@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="dev.aurakai.kernel.engine.VerificationGateTest" tests="1" skipped="0" failures="0" errors="0" timestamp="2026-09-14T03:00:57.987Z" hostname="AURAKAI" time="0.005">
+<testsuite name="dev.aurakai.kernel.engine.VerificationGateTest" tests="1" skipped="0" failures="0" errors="0" timestamp="2026-09-14T21:51:49.504Z" hostname="AURAKAI" time="0.003">
   <properties/>
-  <testcase name="failed falsification must veto promotion and force HOLD_AS_L1()" classname="dev.aurakai.kernel.engine.VerificationGateTest" time="0.005"/>
+  <testcase name="failed falsification must veto promotion and force HOLD_AS_L1()" classname="dev.aurakai.kernel.engine.VerificationGateTest" time="0.003"/>
   <system-out><![CDATA[]]></system-out>
   <system-err><![CDATA[]]></system-err>
 </testsuite>

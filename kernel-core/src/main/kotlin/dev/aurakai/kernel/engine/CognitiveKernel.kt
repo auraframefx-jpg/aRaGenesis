@@ -53,7 +53,7 @@ open class CognitiveKernel(
             targetLevel = targetLevel,
             hasIndependentEvidence = groupedRepresentatives.size >= 2,
             hasIndependentContradiction = contradicting.isNotEmpty(),
-            reliesSolelyOnCanon = groupedRepresentatives.all { it.independenceGroupId == "origin-canon-core" },
+            reliesSolelyOnCanon = groupedRepresentatives.all { it.independenceGroupId == "origin-internal-canon-consensus" },
             falsificationResult = falsificationResult,
             runtimeReceipts = untrustedNodeResults.flatMap { it.runtimeReceipts },
             causalReceipts = untrustedNodeResults.flatMap { it.causalReceipts }
