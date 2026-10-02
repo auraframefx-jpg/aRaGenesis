@@ -16,6 +16,11 @@ import dev.aurakai.kernel.verification.VerificationStatus
  * Entryway Lock:
  * Primary constructor is internal to prevent direct unverified construction.
  * Bypassing the projection gate via un-validated copy throws ConstitutionalViolationException.
+ *
+ * @property verifiedHypotheses Snapshot list of verified hypotheses (retaining hypothesis status).
+ * @property receipts List of verification receipts validating this state.
+ * @property observations Observations supporting this state.
+ * @property stateDigest Cryptographic digest representing the exact projected state.
  */
 class DomState internal constructor(
     val verifiedHypotheses: List<Hypothesis>,
@@ -26,6 +31,7 @@ class DomState internal constructor(
 
     /**
      * Disable un-validated state mutations via copy.
+     * Re-validates the proposed state against the ProjectionGate rules.
      */
     fun copy(
         verifiedHypotheses: List<Hypothesis> = this.verifiedHypotheses,
@@ -71,6 +77,12 @@ class DomState internal constructor(
         /**
          * ProjectionGate: The singular permitted entry point for minting DomState.
          * Verifies cryptographic receipt payload digest binding against the exact candidate hypotheses and observations.
+         *
+         * @param hypotheses Candidate hypotheses to project.
+         * @param receipts Verification receipts authorizing projection.
+         * @param observations Underlying observations.
+         * @return DomState instance.
+         * @throws ConstitutionalViolationException if no receipts exist, veto executed, or digest mismatch.
          */
         fun project(
             hypotheses: List<Hypothesis>,
