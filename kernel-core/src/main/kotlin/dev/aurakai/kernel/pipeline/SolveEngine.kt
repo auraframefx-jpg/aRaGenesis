@@ -1,24 +1,17 @@
 package dev.aurakai.kernel.pipeline
 
 import dev.aurakai.kernel.epistemic.*
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * SOLVE Engine Implementation.
  * Breaks external boundary into immutable ASH observations.
- *
- * SOLVE responsibilities:
- * 1. Receive raw string input
- * 2. Reject blank input
- * 3. Preserve the exact raw original value in provenance
- * 4. Assign an AshId
- * 5. Attach provenance
- * 6. Classify observation telemetry type
- * 7. Return immutable AshRecord
- *
- * SOLVE does NOT parse commands, invoke AI, infer intent, verify claims,
- * create hypotheses, or execute embedded instructions.
  */
 class SolveEngine {
+
+    companion object {
+        private val sequence = AtomicLong(0)
+    }
 
     fun solve(
         rawInput: String,
@@ -37,7 +30,8 @@ class SolveEngine {
             rawOriginalValue = rawInput
         )
 
-        val id = AshId("ash-${digest(rawInput)}-$sourceId-${timestamp.epochMillis}")
+        val seq = sequence.incrementAndGet()
+        val id = AshId("ash-${digest(rawInput)}-$sourceId-${timestamp.epochMillis}-$seq")
 
         return AshRecord(
             id = id,

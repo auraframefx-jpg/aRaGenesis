@@ -2,7 +2,9 @@ package dev.aurakai.kernel.epistemic
 
 import dev.aurakai.kernel.dom.DomState
 import dev.aurakai.kernel.pipeline.SolveEngine
+import dev.aurakai.kernel.verification.ReceiptId
 import dev.aurakai.kernel.verification.VerificationEngine
+import dev.aurakai.kernel.verification.VerificationReceipt
 import dev.aurakai.kernel.verification.VerificationStatus
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -13,7 +15,7 @@ import kotlin.test.assertTrue
 
 /**
  * Constitutional Conformance Test Suite.
- * Validates SoulScript Epistemic Invariants against the Cognitive Kernel substrate.
+ * Validates SoulScript Epistemic Invariants & Sealing Hardening against the Cognitive Kernel substrate.
  */
 class KernelInvariantsTest {
 
@@ -27,7 +29,6 @@ class KernelInvariantsTest {
 
         assertEquals(maliciousInput, ash.payload)
         assertEquals(maliciousInput, ash.provenance.rawOriginalValue)
-        // Assert that AshRecord contains only inert data fields and no capability/permission fields
         assertEquals(AshRecord::class.java.declaredFields.map { it.name }.sorted(),
             listOf("id", "payload", "provenance", "telemetryType").sorted()
         )
@@ -95,7 +96,7 @@ class KernelInvariantsTest {
     }
 
     @Test
-    fun `Test 5 - Contradiction triggers veto`() {
+    fun `Test 5 - Contradiction triggers veto and refuses state transition`() {
         val counterObs = solveEngine.solve("Memory test failed with critical leak.", "test-runner")
         val contradictedHypothesis = Hypothesis(
             id = HypothesisId("hyp-003"),
@@ -114,8 +115,8 @@ class KernelInvariantsTest {
         assertEquals(VerificationStatus.VETOED, receipt.results[contradictedHypothesis.id])
         assertNotNull(receipt.vetoReason)
 
-        // DomState transition must be refused on veto
-        assertFailsWith<IllegalArgumentException> {
+        // DomState transition must throw ConstitutionalViolationException on veto
+        assertFailsWith<ConstitutionalViolationException> {
             DomState.project(
                 hypotheses = listOf(contradictedHypothesis),
                 receipts = listOf(receipt),
@@ -146,7 +147,6 @@ class KernelInvariantsTest {
             observations = listOf(obs)
         )
 
-        // Verified hypothesis in DOM remains a Hypothesis type
         val projected = dom.verifiedHypotheses.first()
         assertEquals("Hypothesis", projected::class.simpleName)
         assertEquals(HypothesisId("hyp-004"), projected.id)
@@ -185,6 +185,7 @@ class KernelInvariantsTest {
 
         assertEquals(receipt1.results, receipt2.results)
         assertEquals(receipt1.inputDigest, receipt2.inputDigest)
+        assertEquals(receipt1.payloadDigest, receipt2.payloadDigest)
         assertEquals(receipt1.vetoExecuted, receipt2.vetoExecuted)
     }
 
@@ -202,8 +203,91 @@ class KernelInvariantsTest {
             val ash = solveEngine.solve(rawInput = payload, sourceId = "ingress-formatter")
             assertEquals(payload, ash.payload)
             assertEquals(payload, ash.provenance.rawOriginalValue)
-            // Remains pure observation data with no execution capability
             assertFalse(ash.payload.isEmpty())
+        }
+    }
+
+    @Test
+    fun `Hardening Test 11 - Direct copy state mutation on DomState throws ConstitutionalViolationException`() {
+        val obs = solveEngine.solve("Valid obs", "source-3")
+        val hypothesis = Hypothesis(
+            id = HypothesisId("hyp-005"),
+            statement = "Valid state",
+            supportingAshIds = listOf(obs.id)
+        )
+        val receipt = verificationEngine.verify(listOf(hypothesis), listOf(obs))
+
+        val dom = DomState.project(listOf(hypothesis), listOf(receipt), listOf(obs))
+
+        val unverifiedHypothesis = Hypothesis(
+            id = HypothesisId("unverified-hyp"),
+            statement = "Injected unverified claim"
+        )
+
+        // Attempting to inject unverified hypothesis via copy must fail
+        assertFailsWith<ConstitutionalViolationException> {
+            dom.copy(verifiedHypotheses = dom.verifiedHypotheses + unverifiedHypothesis)
+        }
+    }
+
+    @Test
+    fun `Hardening Test 12 - Receipt generated for H1 fails to project modified H1_modified`() {
+        val obs = solveEngine.solve("Obs for H1", "source-4")
+        val h1 = Hypothesis(
+            id = HypothesisId("hyp-h1"),
+            statement = "Original statement H1",
+            supportingAshIds = listOf(obs.id)
+        )
+        val receipt = verificationEngine.verify(listOf(h1), listOf(obs))
+
+        val h1Modified = h1.copy(statement = "Modified statement H1_modified")
+
+        // Passing H1_modified with receipt generated for H1 must fail digest check
+        assertFailsWith<ConstitutionalViolationException> {
+            DomState.project(
+                hypotheses = listOf(h1Modified),
+                receipts = listOf(receipt),
+                observations = listOf(obs)
+            )
+        }
+    }
+
+    @Test
+    fun `Hardening Test 13 - Replayed or forged receipts are rejected`() {
+        val obs = solveEngine.solve("Obs for forgery check", "source-5")
+        val hypothesis = Hypothesis(
+            id = HypothesisId("hyp-forgery"),
+            statement = "Real statement",
+            supportingAshIds = listOf(obs.id)
+        )
+
+        val forgedReceipt = VerificationReceipt(
+            id = ReceiptId("forged-rcpt"),
+            timestamp = KernelTimestamp(1000L),
+            evaluatedHypothesisIds = listOf(hypothesis.id),
+            results = mapOf(hypothesis.id to VerificationStatus.VERIFIED),
+            vetoExecuted = false,
+            vetoReason = null,
+            inputDigest = "forged-digest-12345",
+            payloadDigest = "forged-digest-12345"
+        )
+
+        assertFailsWith<ConstitutionalViolationException> {
+            DomState.project(
+                hypotheses = listOf(hypothesis),
+                receipts = listOf(forgedReceipt),
+                observations = listOf(obs)
+            )
+        }
+    }
+
+    @Test
+    fun `Hardening Test 14 - Rejects duplicate HypothesisIds in VerificationEngine`() {
+        val h1 = Hypothesis(id = HypothesisId("duplicate-id"), statement = "First statement")
+        val h2 = Hypothesis(id = HypothesisId("duplicate-id"), statement = "Second statement")
+
+        assertFailsWith<IllegalArgumentException> {
+            verificationEngine.verify(listOf(h1, h2), emptyList())
         }
     }
 }
