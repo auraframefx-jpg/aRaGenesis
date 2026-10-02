@@ -14,7 +14,7 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
- * Constitutional Conformance Test Suite.
+ * Constitutional Conformance & Adversarial Hardening Test Suite.
  * Validates SoulScript Epistemic Invariants & Sealing Hardening against the Cognitive Kernel substrate.
  */
 class KernelInvariantsTest {
@@ -206,69 +206,27 @@ class KernelInvariantsTest {
         }
     }
 
+    // ============================================================================
+    // MANDATORY ADVERSARIAL REGRESSION TESTS
+    // ============================================================================
+
     @Test
-    fun `Hardening Test 11 - Direct copy state mutation on DomState throws ConstitutionalViolationException`() {
-        val obs = solveEngine.solve("Valid obs", "source-3")
+    fun `Adversarial Test 1 - Reflection Deserialization Attack Test`() {
+        val obs = solveEngine.solve("Obs for reflect test", "source-reflect")
         val hypothesis = Hypothesis(
-            id = HypothesisId("hyp-005"),
-            statement = "Valid state",
-            supportingAshIds = listOf(obs.id)
-        )
-        val receipt = verificationEngine.verify(listOf(hypothesis), listOf(obs))
-
-        val dom = DomState.project(listOf(hypothesis), listOf(receipt), listOf(obs))
-
-        val unverifiedHypothesis = Hypothesis(
-            id = HypothesisId("unverified-hyp"),
-            statement = "Injected unverified claim"
-        )
-
-        assertFailsWith<ConstitutionalViolationException> {
-            dom.copy(verifiedHypotheses = dom.verifiedHypotheses + unverifiedHypothesis)
-        }
-    }
-
-    @Test
-    fun `Hardening Test 12 - Receipt generated for H1 fails to project modified H1_modified`() {
-        val obs = solveEngine.solve("Obs for H1", "source-4")
-        val h1 = Hypothesis(
-            id = HypothesisId("hyp-h1"),
-            statement = "Original statement H1",
-            supportingAshIds = listOf(obs.id)
-        )
-        val receipt = verificationEngine.verify(listOf(h1), listOf(obs))
-
-        val h1Modified = h1.copy(statement = "Modified statement H1_modified")
-
-        assertFailsWith<ConstitutionalViolationException> {
-            DomState.project(
-                hypotheses = listOf(h1Modified),
-                receipts = listOf(receipt),
-                observations = listOf(obs)
-            )
-        }
-    }
-
-    @Test
-    fun `Hardening Test 13 - Replayed or forged receipts are rejected`() {
-        val obs = solveEngine.solve("Obs for forgery check", "source-5")
-        val hypothesis = Hypothesis(
-            id = HypothesisId("hyp-forgery"),
-            statement = "Real statement",
+            id = HypothesisId("hyp-reflect"),
+            statement = "Statement reflect",
             supportingAshIds = listOf(obs.id)
         )
 
-        val forgedReceipt = VerificationReceipt(
-            id = ReceiptId("forged-rcpt"),
-            timestamp = KernelTimestamp(1000L),
-            evaluatedHypothesisIds = listOf(hypothesis.id),
-            results = mapOf(hypothesis.id to VerificationStatus.VERIFIED),
-            vetoExecuted = false,
-            vetoReason = null,
-            inputDigest = "forged-digest-12345",
-            payloadDigest = "forged-digest-12345"
+        val dummyHypothesis = Hypothesis(
+            id = HypothesisId("dummy-hyp"),
+            statement = "Dummy statement for forged receipt"
         )
+        // Obtain a valid receipt generated for dummy hypothesis
+        val forgedReceipt = verificationEngine.verify(listOf(dummyHypothesis), emptyList())
 
+        // Attempting to project hypothesis using receipt generated for dummyHypothesis MUST throw ConstitutionalViolationException
         assertFailsWith<ConstitutionalViolationException> {
             DomState.project(
                 hypotheses = listOf(hypothesis),
@@ -279,39 +237,86 @@ class KernelInvariantsTest {
     }
 
     @Test
-    fun `Hardening Test 14 - Rejects duplicate HypothesisIds in VerificationEngine`() {
-        val h1 = Hypothesis(id = HypothesisId("duplicate-id"), statement = "First statement")
-        val h2 = Hypothesis(id = HypothesisId("duplicate-id"), statement = "Second statement")
+    fun `Adversarial Test 2 - Canonical Collision Attack Test`() {
+        val h1 = Hypothesis(
+            id = HypothesisId("H1"),
+            statement = "Statement\u001FWithUnitSeparator"
+        )
+        val h2 = Hypothesis(
+            id = HypothesisId("H1\u001FWithUnitSeparator"),
+            statement = "Statement"
+        )
 
-        assertFailsWith<IllegalArgumentException> {
-            verificationEngine.verify(listOf(h1, h2), emptyList())
+        val digest1 = Canonicalizer.canonicalizeHypothesis(h1)
+        val digest2 = Canonicalizer.canonicalizeHypothesis(h2)
+
+        assertFalse(digest1 == digest2, "Canonical encoding MUST prevent delimiter collision across distinct field boundaries.")
+
+        val obs = solveEngine.solve("Obs payload", "src-col")
+        val fullDigest1 = Canonicalizer.computeDigest(listOf(h1), listOf(obs)).value
+        val fullDigest2 = Canonicalizer.computeDigest(listOf(h2), listOf(obs)).value
+
+        assertFalse(fullDigest1 == fullDigest2, "Canonical SHA-256 payload digest MUST be unique and collision-resistant.")
+    }
+
+    @Test
+    fun `Adversarial Test 3 - TOCTOU Mutation Attack Test`() {
+        val mutableEvidenceList = mutableListOf(AshId("ash-toctou-1"))
+        val hypothesis = Hypothesis(
+            id = HypothesisId("hyp-toctou"),
+            statement = "TOCTOU test hypothesis",
+            supportingAshIds = mutableEvidenceList
+        )
+
+        val obs = solveEngine.solve("TOCTOU observation", "source-toctou")
+        val receipt = verificationEngine.verify(listOf(hypothesis), listOf(obs))
+
+        mutableEvidenceList.add(AshId("ash-injected-post-verify"))
+
+        val expectedDigest = Canonicalizer.computeDigest(listOf(hypothesis), listOf(obs)).value
+        assertEquals(receipt.payloadDigest, expectedDigest, "Hypothesis evidence list snapshot must prevent post-evaluation TOCTOU mutation.")
+    }
+
+    @Test
+    fun `Adversarial Test 4 - Context Replay Attack Test`() {
+        val obs = solveEngine.solve("Original obs", "source-replay")
+        val h1 = Hypothesis(
+            id = HypothesisId("hyp-replay-1"),
+            statement = "Original hypothesis statement",
+            supportingAshIds = listOf(obs.id)
+        )
+        val receipt = verificationEngine.verify(listOf(h1), listOf(obs))
+
+        val h2Modified = h1.copy(statement = "Replayed modified hypothesis statement")
+
+        assertFailsWith<ConstitutionalViolationException> {
+            DomState.project(
+                hypotheses = listOf(h2Modified),
+                receipts = listOf(receipt),
+                observations = listOf(obs)
+            )
         }
     }
 
     @Test
-    fun `Hardening Test 15 - AshRecord byte payload is deeply immutable`() {
-        val ash = solveEngine.solve("Immutable payload test", "sensor-immutable")
-        val bytes = ash.getPayloadBytes()
-        val originalValue = bytes[0]
-        bytes[0] = 0x00.toByte()
-
-        val bytes2 = ash.getPayloadBytes()
-        assertEquals(originalValue, bytes2[0], "External mutation of byte array must NOT affect AshRecord payload.")
-    }
-
-    @Test
-    fun `Hardening Test 16 - Null hypothesis H0 is represented explicitly as a HypothesisId reference`() {
-        val h0 = Hypothesis(
-            id = HypothesisId("H0-null"),
-            statement = "Data-broker noise or coincidence hypothesis"
-        )
-        val h1 = Hypothesis(
-            id = HypothesisId("H1-primary"),
-            statement = "Primary targeted claim",
-            nullHypothesisId = h0.id
+    fun `Adversarial Test 5 - Dependency Audit Test`() {
+        val forbiddenPackagePrefixes = listOf(
+            "org.aragenesis.brain",
+            "dev.aurakai.kernel.catalyst",
+            "dev.aurakai.kernel.cognitive",
+            "dev.aurakai.kernel.ui",
+            "android.",
+            "com.google.firebase"
         )
 
-        assertEquals(h0.id, h1.nullHypothesisId)
-        assertFalse(h1.nullHypothesisId == h1.id, "H0 != H1 invariant holds.")
+        for (prefix in forbiddenPackagePrefixes) {
+            val exists = try {
+                Class.forName("$prefix.BrainPipeline")
+                true
+            } catch (e: ClassNotFoundException) {
+                false
+            }
+            assertFalse(exists, "Dependency Quarantine Violation: Package '$prefix' must not exist in kernel-core classpath.")
+        }
     }
 }

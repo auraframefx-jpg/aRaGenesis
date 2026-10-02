@@ -13,9 +13,9 @@ enum class VerificationStatus {
 
 /**
  * Immutable Verification Receipt.
- * Cryptographically bound to the complete deterministic content digest of evaluated hypotheses and observations.
+ * Primary constructor is internal so callers outside the verification engine cannot forge receipts.
  */
-data class VerificationReceipt(
+class VerificationReceipt internal constructor(
     val id: ReceiptId,
     val timestamp: KernelTimestamp,
     val evaluatedHypothesisIds: List<HypothesisId>,
@@ -24,7 +24,36 @@ data class VerificationReceipt(
     val vetoReason: String?,
     val inputDigest: String,
     val payloadDigest: String = inputDigest
-)
+) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is VerificationReceipt) return false
+        return id == other.id &&
+                timestamp == other.timestamp &&
+                evaluatedHypothesisIds == other.evaluatedHypothesisIds &&
+                results == other.results &&
+                vetoExecuted == other.vetoExecuted &&
+                vetoReason == other.vetoReason &&
+                inputDigest == other.inputDigest &&
+                payloadDigest == other.payloadDigest
+    }
+
+    override fun hashCode(): Int {
+        var res = id.hashCode()
+        res = 31 * res + timestamp.hashCode()
+        res = 31 * res + evaluatedHypothesisIds.hashCode()
+        res = 31 * res + results.hashCode()
+        res = 31 * res + vetoExecuted.hashCode()
+        res = 31 * res + (vetoReason?.hashCode() ?: 0)
+        res = 31 * res + inputDigest.hashCode()
+        res = 31 * res + payloadDigest.hashCode()
+        return res
+    }
+
+    override fun toString(): String {
+        return "VerificationReceipt(id='${id.value}', vetoExecuted=$vetoExecuted, payloadDigest='$payloadDigest')"
+    }
+}
 
 /**
  * Epistemic Verification Engine (Constitutional Gate).
@@ -54,7 +83,6 @@ class VerificationEngine {
             }
             val isExplicitlyContradicted = h.evidenceGrade == EvidenceGrade.CONTRADICTED || h.status == HypothesisStatus.CONTRADICTED
 
-            // Veto triggers ONLY when an explicit contradiction is established
             val isContradicted = isExplicitlyContradicted || hasExplicitContradictoryAssessment
 
             if (isContradicted) {
@@ -68,7 +96,7 @@ class VerificationEngine {
             }
         }
 
-        val payloadDigest = computePayloadDigest(hypotheses, observations)
+        val payloadDigest = Canonicalizer.computeDigest(hypotheses, observations).value
         val receiptId = ReceiptId("rcpt-${timestamp.epochMillis}-$payloadDigest")
 
         return VerificationReceipt(
@@ -85,18 +113,7 @@ class VerificationEngine {
 
     companion object {
         fun computePayloadDigest(hypotheses: List<Hypothesis>, observations: List<AshRecord>): String {
-            val sortedHypDigests = hypotheses.sortedBy { it.id.value }.joinToString(";") { it.computeDigest() }
-            val sortedObsDigests = observations.sortedBy { it.id.value }.joinToString(";") {
-                "${it.id.value}:${it.payload}:${it.provenance.rawOriginalValue}:${it.provenance.sourceId}"
-            }
-
-            val rawCombined = "HYP[$sortedHypDigests]|OBS[$sortedObsDigests]"
-
-            var acc = 0L
-            for (ch in rawCombined) {
-                acc = 31 * acc + ch.code
-            }
-            return acc.toULong().toString(16)
+            return Canonicalizer.computeDigest(hypotheses, observations).value
         }
     }
 }

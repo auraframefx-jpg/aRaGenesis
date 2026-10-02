@@ -77,15 +77,6 @@ data class Hypothesis(
     val countEvidence: List<CounterEvidence> = counterEvidence.toList()
 
     fun computeDigest(): String {
-        val sortedSupp = suppEvidence.map { "${it.ashId.value}:${it.relation.name}" }.sorted().joinToString(",")
-        val sortedCount = countEvidence.map { "${it.evidence.ashId.value}:${it.assessment.name}" }.sorted().joinToString(",")
-        val nullHypStr = nullHypothesisId?.value ?: "NONE"
-        val raw = "${id.value}|$statement|$sortedSupp|$sortedCount|$nullHypStr|${evidenceGrade.name}|${provenanceStatus.name}|${status.name}"
-
-        var acc = 0L
-        for (ch in raw) {
-            acc = 31 * acc + ch.code
-        }
-        return acc.toULong().toString(16)
+        return Canonicalizer.canonicalizeHypothesis(this)
     }
 }
