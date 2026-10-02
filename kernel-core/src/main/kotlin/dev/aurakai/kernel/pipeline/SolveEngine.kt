@@ -23,14 +23,20 @@ class SolveEngine {
             "Blank or whitespace-only input rejected by SOLVE engine."
         }
 
-        // Preserve exact raw value in provenance without transformation or normalization
+        val seq = sequence.incrementAndGet()
+        val provId = ProvenanceId("prov-$sourceId-${timestamp.epochMillis}-$seq")
+
         val provenance = Provenance(
+            id = provId,
             sourceId = sourceId,
             timestamp = timestamp,
-            rawOriginalValue = rawInput
+            rawOriginalValue = rawInput,
+            sourceUri = "uri://kernel/$sourceId",
+            methodology = "SOULSCRIPT_SOLVE",
+            parentGraph = emptyList(),
+            sourceDigest = Digest(digest(rawInput))
         )
 
-        val seq = sequence.incrementAndGet()
         val id = AshId("ash-${digest(rawInput)}-$sourceId-${timestamp.epochMillis}-$seq")
 
         return AshRecord(

@@ -15,9 +15,7 @@ enum class TelemetryType {
 /**
  * Epistemic Observation Layer (ASH).
  * Represents what was received from external boundaries, not what it means.
- * Invariant: DATA != AUTHORITY.
- * Contains zero permissions, capabilities, execution flags, or command structures.
- * Blank or whitespace-only payloads are rejected at construction.
+ * Invariant: DATA != AUTHORITY. Deeply immutable payload representation.
  */
 data class AshRecord(
     val id: AshId,
@@ -29,5 +27,13 @@ data class AshRecord(
         require(payload.isNotBlank()) {
             "Blank or whitespace-only ASH payload is rejected."
         }
+    }
+
+    /**
+     * Defensive copy accessor for raw byte representation.
+     * Prevents external callers from mutating underlying byte array state.
+     */
+    fun getPayloadBytes(): ByteArray {
+        return payload.toByteArray(Charsets.UTF_8).clone()
     }
 }

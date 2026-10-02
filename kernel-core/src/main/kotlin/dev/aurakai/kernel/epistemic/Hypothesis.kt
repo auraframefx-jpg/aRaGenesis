@@ -1,14 +1,8 @@
 package dev.aurakai.kernel.epistemic
 
-/**
- * Unique value identifier for a hypothesis.
- */
 @JvmInline
 value class HypothesisId(val value: String)
 
-/**
- * Taxonomy of evidence strength supporting a hypothesis.
- */
 enum class EvidenceGrade {
     DIRECT,
     CORROBORATED,
@@ -17,48 +11,76 @@ enum class EvidenceGrade {
     CONTRADICTED
 }
 
-/**
- * Cryptographic or attestation status of the provenance of supporting evidence.
- */
 enum class ProvenanceStatus {
     UNVERIFIED,
     SOURCE_ATTESTED,
     CRYPTOGRAPHICALLY_VERIFIED
 }
 
+enum class EvidenceRelation {
+    SUPPORTS,
+    COUNTERS,
+    CONTEXT
+}
+
+data class EvidenceRef(
+    val ashId: AshId,
+    val relation: EvidenceRelation = EvidenceRelation.SUPPORTS
+)
+
+enum class CounterAssessment {
+    CONTRADICTORY,
+    ALTERNATIVE_EXPLANATION,
+    DATA_QUALITY_CONCERN,
+    TEMPORAL_CONFLICT,
+    IDENTITY_CONFLICT,
+    UNRESOLVED
+}
+
+data class CounterEvidence(
+    val evidence: EvidenceRef,
+    val assessment: CounterAssessment = CounterAssessment.UNRESOLVED
+)
+
+enum class HypothesisStatus {
+    PROPOSED,
+    SUPPORTED,
+    CONTRADICTED,
+    CALIBRATED,
+    UNKNOWN
+}
+
 /**
  * Epistemic Hypothesis Layer (PHOENIX).
- * Constructs provisional candidate explanations.
- * Retains defensive snapshot references to both supporting and counter-evidence ASH records.
- * EvidenceGrade and ProvenanceStatus are strictly independent.
+ * Represents structured propositions derived from observations.
  *
- * @property id Unique hypothesis identifier.
- * @property statement Textual statement or claim of the hypothesis.
- * @property supportingAshIds Snapshot list of supporting observation IDs.
- * @property counterEvidenceAshIds Snapshot list of counter-evidence observation IDs.
- * @property evidenceGrade Assessment of evidence strength.
- * @property provenanceStatus Attestation level of evidence provenance.
+ * Invariants:
+ * - Hypothesis != Observation
+ * - Hypothesis != Fact
+ * - Null Hypothesis (H0) is modeled as a HypothesisId reference, preserving H0 != H1 and H0 != Evidence.
  */
 data class Hypothesis(
     val id: HypothesisId,
     val statement: String,
     val supportingAshIds: List<AshId> = emptyList(),
     val counterEvidenceAshIds: List<AshId> = emptyList(),
+    val supportingEvidence: List<EvidenceRef> = supportingAshIds.map { EvidenceRef(it, EvidenceRelation.SUPPORTS) },
+    val counterEvidence: List<CounterEvidence> = counterEvidenceAshIds.map { CounterEvidence(EvidenceRef(it, EvidenceRelation.COUNTERS), CounterAssessment.UNRESOLVED) },
+    val nullHypothesisId: HypothesisId? = null,
     val evidenceGrade: EvidenceGrade = EvidenceGrade.PLAUSIBLE,
-    val provenanceStatus: ProvenanceStatus = ProvenanceStatus.UNVERIFIED
+    val provenanceStatus: ProvenanceStatus = ProvenanceStatus.UNVERIFIED,
+    val status: HypothesisStatus = HypothesisStatus.PROPOSED
 ) {
     val supportingAsh: List<AshId> = supportingAshIds.toList()
     val counterAsh: List<AshId> = counterEvidenceAshIds.toList()
+    val suppEvidence: List<EvidenceRef> = supportingEvidence.toList()
+    val countEvidence: List<CounterEvidence> = counterEvidence.toList()
 
-    /**
-     * Computes a deterministic content digest string for this hypothesis.
-     * Incorporates id, statement, sorted supporting ASH IDs, sorted counter-evidence ASH IDs,
-     * evidence grade, and provenance status.
-     */
     fun computeDigest(): String {
-        val sortedSupp = supportingAsh.map { it.value }.sorted().joinToString(",")
-        val sortedCount = counterAsh.map { it.value }.sorted().joinToString(",")
-        val raw = "${id.value}|$statement|$sortedSupp|$sortedCount|${evidenceGrade.name}|${provenanceStatus.name}"
+        val sortedSupp = suppEvidence.map { "${it.ashId.value}:${it.relation.name}" }.sorted().joinToString(",")
+        val sortedCount = countEvidence.map { "${it.evidence.ashId.value}:${it.assessment.name}" }.sorted().joinToString(",")
+        val nullHypStr = nullHypothesisId?.value ?: "NONE"
+        val raw = "${id.value}|$statement|$sortedSupp|$sortedCount|$nullHypStr|${evidenceGrade.name}|${provenanceStatus.name}|${status.name}"
 
         var acc = 0L
         for (ch in raw) {

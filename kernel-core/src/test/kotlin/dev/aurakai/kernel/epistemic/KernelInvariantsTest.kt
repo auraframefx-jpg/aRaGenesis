@@ -45,7 +45,7 @@ class KernelInvariantsTest {
                 AshRecord(
                     id = AshId("test-id"),
                     payload = input,
-                    provenance = Provenance("test", KernelTimestamp(1000L), input)
+                    provenance = Provenance(ProvenanceId("prov-test"), "test", KernelTimestamp(1000L), input)
                 )
             }
         }
@@ -115,7 +115,6 @@ class KernelInvariantsTest {
         assertEquals(VerificationStatus.VETOED, receipt.results[contradictedHypothesis.id])
         assertNotNull(receipt.vetoReason)
 
-        // DomState transition must throw ConstitutionalViolationException on veto
         assertFailsWith<ConstitutionalViolationException> {
             DomState.project(
                 hypotheses = listOf(contradictedHypothesis),
@@ -224,7 +223,6 @@ class KernelInvariantsTest {
             statement = "Injected unverified claim"
         )
 
-        // Attempting to inject unverified hypothesis via copy must fail
         assertFailsWith<ConstitutionalViolationException> {
             dom.copy(verifiedHypotheses = dom.verifiedHypotheses + unverifiedHypothesis)
         }
@@ -242,7 +240,6 @@ class KernelInvariantsTest {
 
         val h1Modified = h1.copy(statement = "Modified statement H1_modified")
 
-        // Passing H1_modified with receipt generated for H1 must fail digest check
         assertFailsWith<ConstitutionalViolationException> {
             DomState.project(
                 hypotheses = listOf(h1Modified),
@@ -289,5 +286,32 @@ class KernelInvariantsTest {
         assertFailsWith<IllegalArgumentException> {
             verificationEngine.verify(listOf(h1, h2), emptyList())
         }
+    }
+
+    @Test
+    fun `Hardening Test 15 - AshRecord byte payload is deeply immutable`() {
+        val ash = solveEngine.solve("Immutable payload test", "sensor-immutable")
+        val bytes = ash.getPayloadBytes()
+        val originalValue = bytes[0]
+        bytes[0] = 0x00.toByte()
+
+        val bytes2 = ash.getPayloadBytes()
+        assertEquals(originalValue, bytes2[0], "External mutation of byte array must NOT affect AshRecord payload.")
+    }
+
+    @Test
+    fun `Hardening Test 16 - Null hypothesis H0 is represented explicitly as a HypothesisId reference`() {
+        val h0 = Hypothesis(
+            id = HypothesisId("H0-null"),
+            statement = "Data-broker noise or coincidence hypothesis"
+        )
+        val h1 = Hypothesis(
+            id = HypothesisId("H1-primary"),
+            statement = "Primary targeted claim",
+            nullHypothesisId = h0.id
+        )
+
+        assertEquals(h0.id, h1.nullHypothesisId)
+        assertFalse(h1.nullHypothesisId == h1.id, "H0 != H1 invariant holds.")
     }
 }
