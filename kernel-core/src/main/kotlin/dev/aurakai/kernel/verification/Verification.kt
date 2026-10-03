@@ -13,9 +13,9 @@ enum class VerificationStatus {
 
 /**
  * Immutable Verification Receipt.
- * Primary constructor is internal so callers outside the verification engine cannot forge receipts.
+ * Primary constructor and factory are private to Verification.kt so receipt instances can ONLY be minted by VerificationEngine.
  */
-class VerificationReceipt internal constructor(
+class VerificationReceipt private constructor(
     val id: ReceiptId,
     val timestamp: KernelTimestamp,
     val evaluatedHypothesisIds: List<HypothesisId>,
@@ -53,6 +53,30 @@ class VerificationReceipt internal constructor(
     override fun toString(): String {
         return "VerificationReceipt(id='${id.value}', vetoExecuted=$vetoExecuted, payloadDigest='$payloadDigest')"
     }
+
+    companion object {
+        internal fun createReceipt(
+            id: ReceiptId,
+            timestamp: KernelTimestamp,
+            evaluatedHypothesisIds: List<HypothesisId>,
+            results: Map<HypothesisId, VerificationStatus>,
+            vetoExecuted: Boolean,
+            vetoReason: String?,
+            inputDigest: String,
+            payloadDigest: String = inputDigest
+        ): VerificationReceipt {
+            return VerificationReceipt(
+                id = id,
+                timestamp = timestamp,
+                evaluatedHypothesisIds = evaluatedHypothesisIds.toList(),
+                results = results.toMap(),
+                vetoExecuted = vetoExecuted,
+                vetoReason = vetoReason,
+                inputDigest = inputDigest,
+                payloadDigest = payloadDigest
+            )
+        }
+    }
 }
 
 /**
@@ -85,11 +109,14 @@ class VerificationEngine {
 
             val isContradicted = isExplicitlyContradicted || hasExplicitContradictoryAssessment
 
+            val hasAnyCounterEvidence = h.counterEvidence.isNotEmpty() || h.counterEvidenceAshIds.isNotEmpty()
+            val allSupportingPresent = h.supportingAshIds.isNotEmpty() && h.supportingAshIds.all { obsMap.containsKey(it) }
+
             if (isContradicted) {
                 results[h.id] = VerificationStatus.VETOED
                 vetoExecuted = true
                 vetoReasons.add("Hypothesis ${h.id.value} is contradicted by explicit counter-evidence.")
-            } else if (h.supportingAshIds.isNotEmpty() && h.supportingAshIds.all { obsMap.containsKey(it) }) {
+            } else if (allSupportingPresent && !hasAnyCounterEvidence) {
                 results[h.id] = VerificationStatus.VERIFIED
             } else {
                 results[h.id] = VerificationStatus.REJECTED
@@ -99,7 +126,7 @@ class VerificationEngine {
         val payloadDigest = Canonicalizer.computeDigest(hypotheses, observations).value
         val receiptId = ReceiptId("rcpt-${timestamp.epochMillis}-$payloadDigest")
 
-        return VerificationReceipt(
+        return VerificationReceipt.createReceipt(
             id = receiptId,
             timestamp = timestamp,
             evaluatedHypothesisIds = hypotheses.map { it.id }.toList(),

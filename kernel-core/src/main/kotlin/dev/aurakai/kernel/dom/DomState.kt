@@ -19,7 +19,7 @@ data class KnowledgeSnapshot(val serializedState: ByteArray)
  */
 sealed interface DomState {
 
-    class Projected internal constructor(
+    class Projected private constructor(
         val verifiedHypotheses: List<Hypothesis>,
         val receipts: List<VerificationReceipt>,
         val observations: List<AshRecord>,
@@ -32,7 +32,7 @@ sealed interface DomState {
             observations: List<AshRecord> = this.observations
         ): Projected {
             val expectedDigest = VerificationEngine.computePayloadDigest(verifiedHypotheses, observations)
-            if (expectedDigest != this.stateDigest || receipts.any { it.vetoExecuted }) {
+            if (expectedDigest != this.stateDigest || receipts.any { it.vetoExecuted } || receipts.any { it.payloadDigest != expectedDigest && it.inputDigest != expectedDigest }) {
                 throw ConstitutionalViolationException(
                     "CONSTITUTIONAL VIOLATION: Direct .copy() state mutation attempted without passing ProjectionGate verification."
                 )
@@ -65,6 +65,29 @@ sealed interface DomState {
         override fun toString(): String {
             return "DomState.Projected(verifiedHypothesesCount=${verifiedHypotheses.size}, receiptsCount=${receipts.size}, stateDigest='$stateDigest')"
         }
+
+        companion object {
+            private fun createProjected(
+                verifiedHypotheses: List<Hypothesis>,
+                receipts: List<VerificationReceipt>,
+                observations: List<AshRecord>,
+                stateDigest: String
+            ): Projected {
+                return Projected(
+                    verifiedHypotheses = verifiedHypotheses.toList(),
+                    receipts = receipts.toList(),
+                    observations = observations.toList(),
+                    stateDigest = stateDigest
+                )
+            }
+
+            internal fun create(
+                verifiedHypotheses: List<Hypothesis>,
+                receipts: List<VerificationReceipt>,
+                observations: List<AshRecord>,
+                stateDigest: String
+            ): Projected = createProjected(verifiedHypotheses, receipts, observations, stateDigest)
+        }
     }
 
     data object Empty : DomState
@@ -91,11 +114,11 @@ sealed interface DomState {
 
             val inputDigest = VerificationEngine.computePayloadDigest(hypotheses, observations)
 
-            val matchingReceipt = receipts.find { r ->
-                r.payloadDigest == inputDigest || r.inputDigest == inputDigest
+            val invalidReceipt = receipts.find { r ->
+                r.payloadDigest != inputDigest && r.inputDigest != inputDigest
             }
 
-            if (matchingReceipt == null) {
+            if (invalidReceipt != null) {
                 throw ConstitutionalViolationException(
                     "CONSTITUTIONAL VIOLATION: VerificationReceipt digest mismatch. Receipt does not match payload digest of target hypotheses."
                 )
@@ -108,10 +131,10 @@ sealed interface DomState {
             val permittedHypotheses = hypotheses.filter { verifiedIds.contains(it.id) }
             val projectedDigest = VerificationEngine.computePayloadDigest(permittedHypotheses, observations)
 
-            return Projected(
-                verifiedHypotheses = permittedHypotheses.toList(),
-                receipts = receipts.toList(),
-                observations = observations.toList(),
+            return Projected.create(
+                verifiedHypotheses = permittedHypotheses,
+                receipts = receipts,
+                observations = observations,
                 stateDigest = projectedDigest
             )
         }

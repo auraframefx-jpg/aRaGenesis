@@ -223,10 +223,8 @@ class KernelInvariantsTest {
             id = HypothesisId("dummy-hyp"),
             statement = "Dummy statement for forged receipt"
         )
-        // Obtain a valid receipt generated for dummy hypothesis
         val forgedReceipt = verificationEngine.verify(listOf(dummyHypothesis), emptyList())
 
-        // Attempting to project hypothesis using receipt generated for dummyHypothesis MUST throw ConstitutionalViolationException
         assertFailsWith<ConstitutionalViolationException> {
             DomState.project(
                 hypotheses = listOf(hypothesis),
@@ -317,6 +315,38 @@ class KernelInvariantsTest {
                 false
             }
             assertFalse(exists, "Dependency Quarantine Violation: Package '$prefix' must not exist in kernel-core classpath.")
+        }
+    }
+
+    @Test
+    fun `Adversarial Test 6 - Unresolved or present counter-evidence prevents VERIFIED status`() {
+        val obsSupp = solveEngine.solve("Supporting evidence", "src-supp")
+        val hypothesisWithMissingCounter = Hypothesis(
+            id = HypothesisId("hyp-unresolved"),
+            statement = "Claim with counter evidence",
+            supportingAshIds = listOf(obsSupp.id),
+            counterEvidenceAshIds = listOf(AshId("ash-counter-1"))
+        )
+
+        val receipt = verificationEngine.verify(listOf(hypothesisWithMissingCounter), listOf(obsSupp))
+
+        assertEquals(VerificationStatus.REJECTED, receipt.results[hypothesisWithMissingCounter.id],
+            "Hypothesis with counter-evidence MUST evaluate to REJECTED, not VERIFIED."
+        )
+    }
+
+    @Test
+    fun `Adversarial Test 7 - DomState project rejects mixed or unrelated receipts`() {
+        val obs1 = solveEngine.solve("Obs 1", "src-1")
+        val h1 = Hypothesis(id = HypothesisId("hyp-1"), statement = "Stmt 1", supportingAshIds = listOf(obs1.id))
+        val receipt1 = verificationEngine.verify(listOf(h1), listOf(obs1))
+
+        val obs2 = solveEngine.solve("Obs 2", "src-2")
+        val h2 = Hypothesis(id = HypothesisId("hyp-2"), statement = "Stmt 2", supportingAshIds = listOf(obs2.id))
+        val receipt2 = verificationEngine.verify(listOf(h2), listOf(obs2))
+
+        assertFailsWith<ConstitutionalViolationException> {
+            DomState.project(listOf(h1), listOf(receipt1, receipt2), listOf(obs1))
         }
     }
 }
