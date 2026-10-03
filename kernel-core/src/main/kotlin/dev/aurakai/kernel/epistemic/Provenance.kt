@@ -23,7 +23,7 @@ data class Provenance(
     val parentGraph: List<ProvenanceId> = emptyList(),
     val sourceDigest: Digest = Digest(rawOriginalValue.hashCode().toULong().toString(16))
 ) {
-    val parents: List<ProvenanceId> = parentGraph.sortedBy { it.value }
+    val parents: List<ProvenanceId> = parentGraph.toList().sortedBy { it.value }
 
     fun computeDigest(): String {
         val sortedParents = parents.map { it.value }.joinToString(",")

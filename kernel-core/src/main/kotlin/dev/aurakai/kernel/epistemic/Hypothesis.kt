@@ -145,20 +145,26 @@ class Hypothesis private constructor(
             statement: String,
             supportingAshIds: List<AshId> = emptyList(),
             counterEvidenceAshIds: List<AshId> = emptyList(),
-            supportingEvidence: List<EvidenceRef> = supportingAshIds.map { EvidenceRef(it, EvidenceRelation.SUPPORTS) },
-            counterEvidence: List<CounterEvidence> = counterEvidenceAshIds.map { CounterEvidence(EvidenceRef(it, EvidenceRelation.COUNTERS), CounterAssessment.UNRESOLVED) },
+            supportingEvidence: List<EvidenceRef> = emptyList(),
+            counterEvidence: List<CounterEvidence> = emptyList(),
             nullHypothesisId: HypothesisId? = null,
             evidenceGrade: EvidenceGrade = EvidenceGrade.PLAUSIBLE,
             provenanceStatus: ProvenanceStatus = ProvenanceStatus.UNVERIFIED,
             status: HypothesisStatus = HypothesisStatus.PROPOSED
         ): Hypothesis {
+            val combinedSuppEv = (supportingAshIds.map { EvidenceRef(it, EvidenceRelation.SUPPORTS) } + supportingEvidence).distinctBy { it.ashId }
+            val combinedSuppAsh = (supportingAshIds + supportingEvidence.map { it.ashId }).distinct()
+
+            val combinedCountEv = (counterEvidenceAshIds.map { CounterEvidence(EvidenceRef(it, EvidenceRelation.COUNTERS), CounterAssessment.UNRESOLVED) } + counterEvidence).distinctBy { it.evidence.ashId }
+            val combinedCountAsh = (counterEvidenceAshIds + counterEvidence.map { it.evidence.ashId }).distinct()
+
             return Hypothesis(
                 id = id,
                 statement = statement,
-                supportingAshIds = supportingAshIds.toList(),
-                counterEvidenceAshIds = counterEvidenceAshIds.toList(),
-                supportingEvidence = supportingEvidence.toList(),
-                counterEvidence = counterEvidence.toList(),
+                supportingAshIds = combinedSuppAsh.toList(),
+                counterEvidenceAshIds = combinedCountAsh.toList(),
+                supportingEvidence = combinedSuppEv.toList(),
+                counterEvidence = combinedCountEv.toList(),
                 nullHypothesisId = nullHypothesisId,
                 evidenceGrade = evidenceGrade,
                 provenanceStatus = provenanceStatus,
@@ -171,8 +177,8 @@ class Hypothesis private constructor(
             statement: String,
             supportingAshIds: List<AshId> = emptyList(),
             counterEvidenceAshIds: List<AshId> = emptyList(),
-            supportingEvidence: List<EvidenceRef> = supportingAshIds.map { EvidenceRef(it, EvidenceRelation.SUPPORTS) },
-            counterEvidence: List<CounterEvidence> = counterEvidenceAshIds.map { CounterEvidence(EvidenceRef(it, EvidenceRelation.COUNTERS), CounterAssessment.UNRESOLVED) },
+            supportingEvidence: List<EvidenceRef> = emptyList(),
+            counterEvidence: List<CounterEvidence> = emptyList(),
             nullHypothesisId: HypothesisId? = null,
             evidenceGrade: EvidenceGrade = EvidenceGrade.PLAUSIBLE,
             provenanceStatus: ProvenanceStatus = ProvenanceStatus.UNVERIFIED,

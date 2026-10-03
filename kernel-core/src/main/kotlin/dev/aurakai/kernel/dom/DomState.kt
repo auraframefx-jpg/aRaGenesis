@@ -7,7 +7,11 @@ import dev.aurakai.kernel.verification.VerificationEngine
 import dev.aurakai.kernel.verification.VerificationReceipt
 import dev.aurakai.kernel.verification.VerificationStatus
 
-data class KnowledgeSnapshot(val serializedState: ByteArray)
+class KnowledgeSnapshot(bytes: ByteArray) {
+    private val data: ByteArray = bytes.clone()
+    val serializedState: ByteArray get() = data.clone()
+    fun getBytes(): ByteArray = data.clone()
+}
 
 /**
  * Deterministic State Projection (DOM).
@@ -31,8 +35,11 @@ sealed interface DomState {
             receipts: List<VerificationReceipt> = this.receipts,
             observations: List<AshRecord> = this.observations
         ): Projected {
-            val expectedDigest = VerificationEngine.computePayloadDigest(verifiedHypotheses, observations)
-            if (expectedDigest != this.stateDigest || receipts.any { it.vetoExecuted } || receipts.any { it.payloadDigest != expectedDigest && it.inputDigest != expectedDigest }) {
+            if (receipts.isEmpty()) {
+                throw ConstitutionalViolationException("CONSTITUTIONAL VIOLATION: Cannot copy DomState with empty receipts.")
+            }
+            val currentProjectedDigest = VerificationEngine.computePayloadDigest(verifiedHypotheses, observations)
+            if (currentProjectedDigest != this.stateDigest || receipts.any { it.vetoExecuted }) {
                 throw ConstitutionalViolationException(
                     "CONSTITUTIONAL VIOLATION: Direct .copy() state mutation attempted without passing ProjectionGate verification."
                 )
@@ -41,7 +48,7 @@ sealed interface DomState {
                 verifiedHypotheses = verifiedHypotheses.toList(),
                 receipts = receipts.toList(),
                 observations = observations.toList(),
-                stateDigest = expectedDigest
+                stateDigest = currentProjectedDigest
             )
         }
 
@@ -67,7 +74,7 @@ sealed interface DomState {
         }
 
         companion object {
-            private fun createProjected(
+            internal fun createProjected(
                 verifiedHypotheses: List<Hypothesis>,
                 receipts: List<VerificationReceipt>,
                 observations: List<AshRecord>,
@@ -80,13 +87,6 @@ sealed interface DomState {
                     stateDigest = stateDigest
                 )
             }
-
-            internal fun create(
-                verifiedHypotheses: List<Hypothesis>,
-                receipts: List<VerificationReceipt>,
-                observations: List<AshRecord>,
-                stateDigest: String
-            ): Projected = createProjected(verifiedHypotheses, receipts, observations, stateDigest)
         }
     }
 
@@ -131,7 +131,7 @@ sealed interface DomState {
             val permittedHypotheses = hypotheses.filter { verifiedIds.contains(it.id) }
             val projectedDigest = VerificationEngine.computePayloadDigest(permittedHypotheses, observations)
 
-            return Projected.create(
+            return Projected.createProjected(
                 verifiedHypotheses = permittedHypotheses,
                 receipts = receipts,
                 observations = observations,

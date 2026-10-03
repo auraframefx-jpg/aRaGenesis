@@ -13,7 +13,7 @@ enum class VerificationStatus {
 
 /**
  * Immutable Verification Receipt.
- * Primary constructor and factory are private to Verification.kt so receipt instances can ONLY be minted by VerificationEngine.
+ * Primary constructor is private so receipt instances can ONLY be minted by VerificationEngine.
  */
 class VerificationReceipt private constructor(
     val id: ReceiptId,

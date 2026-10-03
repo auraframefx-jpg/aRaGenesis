@@ -298,23 +298,26 @@ class KernelInvariantsTest {
 
     @Test
     fun `Adversarial Test 5 - Dependency Audit Test`() {
-        val forbiddenPackagePrefixes = listOf(
-            "org.aragenesis.brain",
-            "dev.aurakai.kernel.catalyst",
-            "dev.aurakai.kernel.cognitive",
-            "dev.aurakai.kernel.ui",
-            "android.",
-            "com.google.firebase"
+        val forbiddenClasses = listOf(
+            "org.aragenesis.brain.pipeline.BrainPipeline",
+            "org.aragenesis.brain.router.TriggerRouter",
+            "org.aragenesis.brain.persona.CatalystRegistry",
+            "org.aragenesis.brain.fusion.FusionEngine",
+            "dev.aurakai.kernel.catalyst.CatalystRegistry",
+            "dev.aurakai.kernel.cognitive.TriggerRouter",
+            "dev.aurakai.kernel.ui.SynthesisOrb",
+            "android.os.Bundle",
+            "com.google.firebase.FirebaseApp"
         )
 
-        for (prefix in forbiddenPackagePrefixes) {
+        for (className in forbiddenClasses) {
             val exists = try {
-                Class.forName("$prefix.BrainPipeline")
+                Class.forName(className)
                 true
             } catch (e: ClassNotFoundException) {
                 false
             }
-            assertFalse(exists, "Dependency Quarantine Violation: Package '$prefix' must not exist in kernel-core classpath.")
+            assertFalse(exists, "Dependency Quarantine Violation: Class '$className' must not exist in kernel-core classpath.")
         }
     }
 
