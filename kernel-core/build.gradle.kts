@@ -17,18 +17,18 @@ dependencies {
 }
 
 kotlin {
-    jvmToolchain(25)
+    jvmToolchain(21)
 }
 
 tasks.withType<KotlinCompile>().configureEach {
     compilerOptions {
-        jvmTarget.set(JvmTarget.JVM_25)
+        jvmTarget.set(JvmTarget.JVM_21)
     }
 }
 
 tasks.withType<JavaCompile>().configureEach {
-    sourceCompatibility = "25"
-    targetCompatibility = "25"
+    sourceCompatibility = "21"
+    targetCompatibility = "21"
 }
 
 tasks.test {
