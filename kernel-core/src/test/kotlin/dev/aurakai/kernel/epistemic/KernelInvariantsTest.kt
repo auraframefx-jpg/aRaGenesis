@@ -352,4 +352,19 @@ class KernelInvariantsTest {
             DomState.project(listOf(h1), listOf(receipt1, receipt2), listOf(obs1))
         }
     }
+
+    @Test
+    fun `Adversarial Test 8 - Same hypothesis under modified observation set rejects projection`() {
+        val obs1 = solveEngine.solve("Obs 1 for H1", "src-1")
+        val obs2 = solveEngine.solve("Obs 2 injected post-verify", "src-2")
+        val h1 = Hypothesis(id = HypothesisId("hyp-mismatch-obs"), statement = "Same claim", supportingAshIds = listOf(obs1.id))
+
+        // Receipt generated for h1 with obs1
+        val receipt = verificationEngine.verify(listOf(h1), listOf(obs1))
+
+        // Attempting to project h1 with modified observation set (obs1 + obs2) MUST throw ConstitutionalViolationException
+        assertFailsWith<ConstitutionalViolationException> {
+            DomState.project(listOf(h1), listOf(receipt), listOf(obs1, obs2))
+        }
+    }
 }
