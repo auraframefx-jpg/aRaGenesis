@@ -6,6 +6,7 @@ import dev.aurakai.kernel.epistemic.Hypothesis
 import dev.aurakai.kernel.verification.VerificationEngine
 import dev.aurakai.kernel.verification.VerificationReceipt
 import dev.aurakai.kernel.verification.VerificationStatus
+import java.util.Collections
 
 class KnowledgeSnapshot(bytes: ByteArray) {
     private val data: ByteArray = bytes.clone()
@@ -24,11 +25,15 @@ class KnowledgeSnapshot(bytes: ByteArray) {
 sealed interface DomState {
 
     class Projected private constructor(
-        val verifiedHypotheses: List<Hypothesis>,
-        val receipts: List<VerificationReceipt>,
-        val observations: List<AshRecord>,
+        verifiedHypotheses: List<Hypothesis>,
+        receipts: List<VerificationReceipt>,
+        observations: List<AshRecord>,
         internal val stateDigest: String
     ) : DomState {
+
+        val verifiedHypotheses: List<Hypothesis> = Collections.unmodifiableList(verifiedHypotheses.toList())
+        val receipts: List<VerificationReceipt> = Collections.unmodifiableList(receipts.toList())
+        val observations: List<AshRecord> = Collections.unmodifiableList(observations.toList())
 
         fun copy(
             verifiedHypotheses: List<Hypothesis> = this.verifiedHypotheses,
@@ -74,7 +79,7 @@ sealed interface DomState {
         }
 
         companion object {
-            internal fun createProjected(
+            private fun createProjected(
                 verifiedHypotheses: List<Hypothesis>,
                 receipts: List<VerificationReceipt>,
                 observations: List<AshRecord>,
@@ -87,6 +92,13 @@ sealed interface DomState {
                     stateDigest = stateDigest
                 )
             }
+
+            internal fun buildProjected(
+                verifiedHypotheses: List<Hypothesis>,
+                receipts: List<VerificationReceipt>,
+                observations: List<AshRecord>,
+                stateDigest: String
+            ): Projected = createProjected(verifiedHypotheses, receipts, observations, stateDigest)
         }
     }
 
@@ -131,7 +143,7 @@ sealed interface DomState {
             val permittedHypotheses = hypotheses.filter { verifiedIds.contains(it.id) }
             val projectedDigest = VerificationEngine.computePayloadDigest(permittedHypotheses, observations)
 
-            return Projected.createProjected(
+            return Projected.buildProjected(
                 verifiedHypotheses = permittedHypotheses,
                 receipts = receipts,
                 observations = observations,

@@ -1,6 +1,7 @@
 package dev.aurakai.kernel.verification
 
 import dev.aurakai.kernel.epistemic.*
+import java.util.Collections
 
 @JvmInline
 value class ReceiptId(val value: String)
@@ -13,18 +14,21 @@ enum class VerificationStatus {
 
 /**
  * Immutable Verification Receipt.
- * Primary constructor is private so receipt instances can ONLY be minted by VerificationEngine.
+ * Primary constructor is private to Verification.kt file so receipt instances can ONLY be minted by VerificationEngine.
  */
 class VerificationReceipt private constructor(
     val id: ReceiptId,
     val timestamp: KernelTimestamp,
-    val evaluatedHypothesisIds: List<HypothesisId>,
-    val results: Map<HypothesisId, VerificationStatus>,
+    evaluatedHypothesisIds: List<HypothesisId>,
+    results: Map<HypothesisId, VerificationStatus>,
     val vetoExecuted: Boolean,
     val vetoReason: String?,
     val inputDigest: String,
     val payloadDigest: String = inputDigest
 ) {
+    val evaluatedHypothesisIds: List<HypothesisId> = Collections.unmodifiableList(evaluatedHypothesisIds.toList())
+    val results: Map<HypothesisId, VerificationStatus> = Collections.unmodifiableMap(results.toMap())
+
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (other !is VerificationReceipt) return false
@@ -55,7 +59,7 @@ class VerificationReceipt private constructor(
     }
 
     companion object {
-        internal fun createReceipt(
+        private fun mint(
             id: ReceiptId,
             timestamp: KernelTimestamp,
             evaluatedHypothesisIds: List<HypothesisId>,
@@ -63,19 +67,28 @@ class VerificationReceipt private constructor(
             vetoExecuted: Boolean,
             vetoReason: String?,
             inputDigest: String,
-            payloadDigest: String = inputDigest
-        ): VerificationReceipt {
-            return VerificationReceipt(
-                id = id,
-                timestamp = timestamp,
-                evaluatedHypothesisIds = evaluatedHypothesisIds.toList(),
-                results = results.toMap(),
-                vetoExecuted = vetoExecuted,
-                vetoReason = vetoReason,
-                inputDigest = inputDigest,
-                payloadDigest = payloadDigest
-            )
-        }
+            payloadDigest: String
+        ): VerificationReceipt = VerificationReceipt(
+            id = id,
+            timestamp = timestamp,
+            evaluatedHypothesisIds = evaluatedHypothesisIds,
+            results = results,
+            vetoExecuted = vetoExecuted,
+            vetoReason = vetoReason,
+            inputDigest = inputDigest,
+            payloadDigest = payloadDigest
+        )
+
+        internal fun buildReceipt(
+            id: ReceiptId,
+            timestamp: KernelTimestamp,
+            evaluatedHypothesisIds: List<HypothesisId>,
+            results: Map<HypothesisId, VerificationStatus>,
+            vetoExecuted: Boolean,
+            vetoReason: String?,
+            inputDigest: String,
+            payloadDigest: String
+        ): VerificationReceipt = mint(id, timestamp, evaluatedHypothesisIds, results, vetoExecuted, vetoReason, inputDigest, payloadDigest)
     }
 }
 
@@ -126,7 +139,7 @@ class VerificationEngine {
         val payloadDigest = Canonicalizer.computeDigest(hypotheses, observations).value
         val receiptId = ReceiptId("rcpt-${timestamp.epochMillis}-$payloadDigest")
 
-        return VerificationReceipt.createReceipt(
+        return VerificationReceipt.buildReceipt(
             id = receiptId,
             timestamp = timestamp,
             evaluatedHypothesisIds = hypotheses.map { it.id }.toList(),
