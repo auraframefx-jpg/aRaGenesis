@@ -69,7 +69,7 @@ sealed interface DomState {
         }
 
         companion object {
-            internal fun createProjected(
+            private fun createProjected(
                 verifiedHypotheses: List<Hypothesis>,
                 receipts: List<VerificationReceipt>,
                 observations: List<AshRecord>,
@@ -82,6 +82,13 @@ sealed interface DomState {
                     stateDigest = stateDigest
                 )
             }
+
+            internal fun create(
+                verifiedHypotheses: List<Hypothesis>,
+                receipts: List<VerificationReceipt>,
+                observations: List<AshRecord>,
+                stateDigest: String
+            ): Projected = createProjected(verifiedHypotheses, receipts, observations, stateDigest)
         }
     }
 
@@ -110,12 +117,23 @@ sealed interface DomState {
             val inputDigest = VerificationEngine.computePayloadDigest(hypotheses, observations)
 
             val invalidReceipt = receipts.find { r ->
-                r.payloadDigest != inputDigest && r.inputDigest != inputDigest
+                r.payloadDigest != inputDigest || r.inputDigest != inputDigest
             }
 
             if (invalidReceipt != null) {
                 throw ConstitutionalViolationException(
                     "CONSTITUTIONAL VIOLATION: VerificationReceipt digest mismatch. Receipt does not match payload digest of target hypotheses."
+                )
+            }
+
+            val inputHypothesisIds = hypotheses.map { it.id }.toSet()
+            val invalidCoverageReceipt = receipts.find { r ->
+                !r.evaluatedHypothesisIds.containsAll(inputHypothesisIds)
+            }
+
+            if (invalidCoverageReceipt != null) {
+                throw ConstitutionalViolationException(
+                    "CONSTITUTIONAL VIOLATION: VerificationReceipt result coverage mismatch. Receipt does not cover all input hypotheses."
                 )
             }
 
@@ -126,7 +144,7 @@ sealed interface DomState {
             val permittedHypotheses = hypotheses.filter { verifiedIds.contains(it.id) }
             val projectedDigest = VerificationEngine.computePayloadDigest(permittedHypotheses, observations)
 
-            return Projected.createProjected(
+            return Projected.create(
                 verifiedHypotheses = permittedHypotheses,
                 receipts = receipts,
                 observations = observations,

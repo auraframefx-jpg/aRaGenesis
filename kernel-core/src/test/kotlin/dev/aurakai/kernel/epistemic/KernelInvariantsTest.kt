@@ -333,8 +333,8 @@ class KernelInvariantsTest {
 
         val receipt = verificationEngine.verify(listOf(hypothesisWithMissingCounter), listOf(obsSupp))
 
-        assertEquals(VerificationStatus.REJECTED, receipt.results[hypothesisWithMissingCounter.id],
-            "Hypothesis with counter-evidence MUST evaluate to REJECTED, not VERIFIED."
+        assertEquals(VerificationStatus.UNRESOLVED, receipt.results[hypothesisWithMissingCounter.id],
+            "Hypothesis with missing counter-evidence MUST evaluate to UNRESOLVED, not VERIFIED."
         )
     }
 
