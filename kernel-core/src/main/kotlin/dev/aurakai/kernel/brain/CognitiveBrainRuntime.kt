@@ -6,7 +6,7 @@ import java.security.MessageDigest
 import java.util.Collections
 
 object Cryptography {
-    fun computeMerkleRoot(bytes: ByteArray): String {
+    fun computePayloadDigest(bytes: ByteArray): String {
         val digest = MessageDigest.getInstance("SHA-256").digest(bytes)
         return digest.joinToString("") { "%02x".format(it) }
     }
@@ -30,17 +30,18 @@ data class ThermalTelemetry(
                 temperature >= 39.0 -> ThermalState.THROTTLED_MEDITATION
                 else -> ThermalState.NOMINAL
             }
-            return ThermalTelemetry(temperature, activeThreads, state)
+            val threads = if (state == ThermalState.THROTTLED_MEDITATION) 1 else activeThreads
+            return ThermalTelemetry(temperature, threads, state)
         }
     }
 }
 
 @JvmInline
-value class MerkleRootHash(val value: String)
+value class PayloadDigest(val value: String)
 
 class RawVisualPayload private constructor(
     private val rawBytes: ByteArray,
-    val merkleRoot: MerkleRootHash,
+    val payloadDigest: PayloadDigest,
     val timestamp: KernelTimestamp
 ) {
     fun getPayloadSnapshot(): ByteArray = rawBytes.clone()
@@ -48,8 +49,8 @@ class RawVisualPayload private constructor(
     companion object {
         fun ingest(bytes: ByteArray, timestamp: KernelTimestamp = KernelTimestamp(System.currentTimeMillis())): RawVisualPayload {
             require(bytes.isNotEmpty()) { "Constitutional violation: Blank observations are inert noise." }
-            val computedRoot = Cryptography.computeMerkleRoot(bytes)
-            return RawVisualPayload(bytes.clone(), MerkleRootHash(computedRoot), timestamp)
+            val computedDigest = Cryptography.computePayloadDigest(bytes)
+            return RawVisualPayload(bytes.clone(), PayloadDigest(computedDigest), timestamp)
         }
     }
 }
@@ -67,7 +68,7 @@ typealias EpistemicGrade = EvidenceGrade
 data class AdversarialVisualAssessment(
     val vector: VisualIntegrityVector,
     val deceptionCoefficientDelta: Double,
-    val targetPayloadRoot: MerkleRootHash,
+    val targetPayloadDigest: PayloadDigest,
     val rawTelemetryArtifacts: List<String> = emptyList()
 ) {
     init {
@@ -107,6 +108,7 @@ interface MetaInstructPolicyGate {
     ): EvaluationVerdict
 
     fun getVerifiedInsightCount(): Long
+    fun recordVerifiedInsight(receipt: VerificationReceipt)
     fun proposeSubstrateEvolution(): EvolutionProposal
 }
 
@@ -124,10 +126,7 @@ class DefaultMetaInstructPolicyGate(
         val grade = corroborator.corroborateContext(assessment, geminiContext, perplexityStream)
         return when (grade) {
             EvidenceGrade.CONTRADICTED -> EvaluationVerdict.UNRESOLVED_QUARANTINE
-            EvidenceGrade.DIRECT, EvidenceGrade.CORROBORATED -> {
-                verifiedInsightCount++
-                EvaluationVerdict.SNAPSHOT_CURATION
-            }
+            EvidenceGrade.DIRECT, EvidenceGrade.CORROBORATED -> EvaluationVerdict.SNAPSHOT_CURATION
             EvidenceGrade.PLAUSIBLE -> EvaluationVerdict.HOT_CONTEXT
             EvidenceGrade.WEAK -> EvaluationVerdict.REJECTED_NOISE
             else -> EvaluationVerdict.UNRESOLVED_QUARANTINE
@@ -135,6 +134,14 @@ class DefaultMetaInstructPolicyGate(
     }
 
     override fun getVerifiedInsightCount(): Long = verifiedInsightCount
+
+    override fun recordVerifiedInsight(receipt: VerificationReceipt) {
+        if (!receipt.vetoExecuted && receipt.results.values.contains(VerificationStatus.VERIFIED)) {
+            verifiedInsightCount++
+        } else {
+            throw ConstitutionalViolationException("CONSTITUTIONAL VIOLATION: Cannot record unverified or vetoed receipt as verified insight.")
+        }
+    }
 
     override fun proposeSubstrateEvolution(): EvolutionProposal {
         require(verifiedInsightCount >= 100L) {
@@ -149,20 +156,32 @@ class DefaultMetaInstructPolicyGate(
     }
 }
 
+enum class ProposedActionType {
+    CHAT,
+    DOM_PROJECTION,
+    EVOLUTION_PROPOSAL,
+    QUARANTINE
+}
+
 data class TriggerProposal(
     val proposalId: String,
-    val actionType: String,
-    val payloadDigest: String,
-    val isExecuted: Boolean = false
+    val actionType: ProposedActionType,
+    val payloadDigest: String
+)
+
+data class ExecutionReceipt(
+    val executionId: String,
+    val proposalId: String,
+    val actionType: ProposedActionType,
+    val timestamp: KernelTimestamp
 )
 
 class TriggerRouter {
-    fun generateProposal(actionType: String, payloadDigest: String): TriggerProposal {
+    fun generateProposal(actionType: ProposedActionType, payloadDigest: String): TriggerProposal {
         return TriggerProposal(
             proposalId = "prop-${System.currentTimeMillis()}-$payloadDigest",
             actionType = actionType,
-            payloadDigest = payloadDigest,
-            isExecuted = false
+            payloadDigest = payloadDigest
         )
     }
 }
@@ -172,20 +191,30 @@ class ExecutionAdmissionGate {
         proposal: TriggerProposal,
         receipt: VerificationReceipt,
         thermalTelemetry: ThermalTelemetry,
-        isQuarantined: Boolean
-    ): Boolean {
+        isQuarantined: Boolean,
+        payload: RawVisualPayload? = null
+    ): ExecutionReceipt {
         if (thermalTelemetry.state == ThermalState.SOVEREIGN_STATE_FREEZE) {
             throw ConstitutionalViolationException("EXECUTION ADMISSION REFUSED: Thermal Wall breached (>= 42°C). State frozen.")
         }
         if (isQuarantined) {
             throw ConstitutionalViolationException("EXECUTION ADMISSION REFUSED: Target state is locked in UNRESOLVED_QUARANTINE.")
         }
-        if (receipt.vetoExecuted || receipt.payloadDigest != proposal.payloadDigest) {
+        if (receipt.vetoExecuted || receipt.payloadDigest != proposal.payloadDigest || receipt.inputDigest != proposal.payloadDigest) {
             throw ConstitutionalViolationException("EXECUTION ADMISSION REFUSED: Receipt mismatch or VETO executed.")
         }
-        if (proposal.isExecuted) {
-            throw ConstitutionalViolationException("PROPOSED_ACTION ≠ EXECUTED_ACTION: Proposal has already been executed.")
+        if (payload != null) {
+            val snapshotDigest = Cryptography.computePayloadDigest(payload.getPayloadSnapshot())
+            if (snapshotDigest != payload.payloadDigest.value) {
+                throw ConstitutionalViolationException("EXECUTION ADMISSION REFUSED: Payload snapshot TOCTOU digest mismatch.")
+            }
         }
-        return true
+
+        return ExecutionReceipt(
+            executionId = "exec-${System.currentTimeMillis()}-${proposal.proposalId}",
+            proposalId = proposal.proposalId,
+            actionType = proposal.actionType,
+            timestamp = KernelTimestamp(System.currentTimeMillis())
+        )
     }
 }
