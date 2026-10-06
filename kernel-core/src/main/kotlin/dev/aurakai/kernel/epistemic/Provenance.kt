@@ -1,5 +1,7 @@
 package dev.aurakai.kernel.epistemic
 
+import java.util.Collections
+
 @JvmInline
 value class KernelTimestamp(val epochMillis: Long)
 
@@ -23,7 +25,11 @@ data class Provenance(
     val parentGraph: List<ProvenanceId> = emptyList(),
     val sourceDigest: Digest = Digest(rawOriginalValue.hashCode().toULong().toString(16))
 ) {
-    val parents: List<ProvenanceId> = parentGraph.toList().sortedBy { it.value }
+    val parents: List<ProvenanceId> = Collections.unmodifiableList(parentGraph.toList().sortedBy { it.value })
+
+    init {
+        // Enforce unmodifiable wrapper check on parentGraph in toString / copy operations if needed
+    }
 
     fun computeDigest(): String {
         val sortedParents = parents.map { it.value }.joinToString(",")

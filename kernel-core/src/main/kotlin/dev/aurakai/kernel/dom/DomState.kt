@@ -40,20 +40,10 @@ sealed interface DomState {
             receipts: List<VerificationReceipt> = this.receipts,
             observations: List<AshRecord> = this.observations
         ): Projected {
-            if (receipts.isEmpty()) {
-                throw ConstitutionalViolationException("CONSTITUTIONAL VIOLATION: Cannot copy DomState with empty receipts.")
-            }
-            val currentProjectedDigest = VerificationEngine.computePayloadDigest(verifiedHypotheses, observations)
-            if (currentProjectedDigest != this.stateDigest || receipts.any { it.vetoExecuted }) {
-                throw ConstitutionalViolationException(
-                    "CONSTITUTIONAL VIOLATION: Direct .copy() state mutation attempted without passing ProjectionGate verification."
-                )
-            }
-            return Projected(
-                verifiedHypotheses = verifiedHypotheses.toList(),
-                receipts = receipts.toList(),
-                observations = observations.toList(),
-                stateDigest = currentProjectedDigest
+            return DomState.project(
+                hypotheses = verifiedHypotheses,
+                receipts = receipts,
+                observations = observations
             )
         }
 
@@ -79,7 +69,7 @@ sealed interface DomState {
         }
 
         companion object {
-            private fun createProjected(
+            internal fun createProjected(
                 verifiedHypotheses: List<Hypothesis>,
                 receipts: List<VerificationReceipt>,
                 observations: List<AshRecord>,
@@ -92,13 +82,6 @@ sealed interface DomState {
                     stateDigest = stateDigest
                 )
             }
-
-            internal fun buildProjected(
-                verifiedHypotheses: List<Hypothesis>,
-                receipts: List<VerificationReceipt>,
-                observations: List<AshRecord>,
-                stateDigest: String
-            ): Projected = createProjected(verifiedHypotheses, receipts, observations, stateDigest)
         }
     }
 
@@ -143,7 +126,7 @@ sealed interface DomState {
             val permittedHypotheses = hypotheses.filter { verifiedIds.contains(it.id) }
             val projectedDigest = VerificationEngine.computePayloadDigest(permittedHypotheses, observations)
 
-            return Projected.buildProjected(
+            return Projected.createProjected(
                 verifiedHypotheses = permittedHypotheses,
                 receipts = receipts,
                 observations = observations,

@@ -9,6 +9,7 @@ value class ReceiptId(val value: String)
 enum class VerificationStatus {
     VERIFIED,
     REJECTED,
+    UNRESOLVED,
     VETOED
 }
 
@@ -59,7 +60,7 @@ class VerificationReceipt private constructor(
     }
 
     companion object {
-        private fun mint(
+        internal fun mint(
             id: ReceiptId,
             timestamp: KernelTimestamp,
             evaluatedHypothesisIds: List<HypothesisId>,
@@ -78,17 +79,6 @@ class VerificationReceipt private constructor(
             inputDigest = inputDigest,
             payloadDigest = payloadDigest
         )
-
-        internal fun buildReceipt(
-            id: ReceiptId,
-            timestamp: KernelTimestamp,
-            evaluatedHypothesisIds: List<HypothesisId>,
-            results: Map<HypothesisId, VerificationStatus>,
-            vetoExecuted: Boolean,
-            vetoReason: String?,
-            inputDigest: String,
-            payloadDigest: String
-        ): VerificationReceipt = mint(id, timestamp, evaluatedHypothesisIds, results, vetoExecuted, vetoReason, inputDigest, payloadDigest)
     }
 }
 
@@ -103,9 +93,14 @@ class VerificationEngine {
         observations: List<AshRecord>,
         timestamp: KernelTimestamp = KernelTimestamp(System.currentTimeMillis())
     ): VerificationReceipt {
-        val ids = hypotheses.map { it.id }
-        require(ids.distinct().size == ids.size) {
+        val hypIds = hypotheses.map { it.id }
+        require(hypIds.distinct().size == hypIds.size) {
             "DUPLICATE HYPOTHESIS DETECTED: Each hypothesis supplied to VerificationEngine must have a unique HypothesisId."
+        }
+
+        val obsIds = observations.map { it.id }
+        require(obsIds.distinct().size == obsIds.size) {
+            "DUPLICATE OBSERVATION DETECTED: Each observation supplied to VerificationEngine must have a unique AshId."
         }
 
         val results = mutableMapOf<HypothesisId, VerificationStatus>()
@@ -113,6 +108,7 @@ class VerificationEngine {
         val vetoReasons = mutableListOf<String>()
 
         val obsMap = observations.associateBy { it.id }
+        val unresolvedAssessments = setOf(CounterAssessment.UNRESOLVED, CounterAssessment.DATA_QUALITY_CONCERN)
 
         for (h in hypotheses) {
             val hasExplicitContradictoryAssessment = h.counterEvidence.any { ce ->
@@ -122,6 +118,10 @@ class VerificationEngine {
 
             val isContradicted = isExplicitlyContradicted || hasExplicitContradictoryAssessment
 
+            val hasUnresolvedCounter = h.counterEvidence.any { ce ->
+                obsMap.containsKey(ce.evidence.ashId) && unresolvedAssessments.contains(ce.assessment)
+            }
+
             val hasAnyCounterEvidence = h.counterEvidence.isNotEmpty() || h.counterEvidenceAshIds.isNotEmpty()
             val allSupportingPresent = h.supportingAshIds.isNotEmpty() && h.supportingAshIds.all { obsMap.containsKey(it) }
 
@@ -129,6 +129,8 @@ class VerificationEngine {
                 results[h.id] = VerificationStatus.VETOED
                 vetoExecuted = true
                 vetoReasons.add("Hypothesis ${h.id.value} is contradicted by explicit counter-evidence.")
+            } else if (hasUnresolvedCounter) {
+                results[h.id] = VerificationStatus.UNRESOLVED
             } else if (allSupportingPresent && !hasAnyCounterEvidence) {
                 results[h.id] = VerificationStatus.VERIFIED
             } else {
@@ -139,7 +141,7 @@ class VerificationEngine {
         val payloadDigest = Canonicalizer.computeDigest(hypotheses, observations).value
         val receiptId = ReceiptId("rcpt-${timestamp.epochMillis}-$payloadDigest")
 
-        return VerificationReceipt.buildReceipt(
+        return VerificationReceipt.mint(
             id = receiptId,
             timestamp = timestamp,
             evaluatedHypothesisIds = hypotheses.map { it.id }.toList(),

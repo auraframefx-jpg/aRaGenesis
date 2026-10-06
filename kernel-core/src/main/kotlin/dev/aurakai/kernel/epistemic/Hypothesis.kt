@@ -1,5 +1,7 @@
 package dev.aurakai.kernel.epistemic
 
+import java.util.Collections
+
 @JvmInline
 value class HypothesisId(val value: String)
 
@@ -66,10 +68,10 @@ class Hypothesis private constructor(
     val provenanceStatus: ProvenanceStatus,
     val status: HypothesisStatus
 ) {
-    val supportingAshIds: List<AshId> = supportingAshIds.toList()
-    val counterEvidenceAshIds: List<AshId> = counterEvidenceAshIds.toList()
-    val supportingEvidence: List<EvidenceRef> = supportingEvidence.toList()
-    val counterEvidence: List<CounterEvidence> = counterEvidence.toList()
+    val supportingAshIds: List<AshId> = Collections.unmodifiableList(supportingAshIds.toList())
+    val counterEvidenceAshIds: List<AshId> = Collections.unmodifiableList(counterEvidenceAshIds.toList())
+    val supportingEvidence: List<EvidenceRef> = Collections.unmodifiableList(supportingEvidence.toList())
+    val counterEvidence: List<CounterEvidence> = Collections.unmodifiableList(counterEvidence.toList())
 
     val supportingAsh: List<AshId> get() = supportingAshIds
     val counterAsh: List<AshId> get() = counterEvidenceAshIds

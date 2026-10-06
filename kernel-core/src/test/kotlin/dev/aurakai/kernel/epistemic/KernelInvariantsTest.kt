@@ -367,4 +367,86 @@ class KernelInvariantsTest {
             DomState.project(listOf(h1), listOf(receipt), listOf(obs1, obs2))
         }
     }
+
+    @Test
+    fun `Adversarial Test 9 - DomState Projected copy re-verifies receipt binding`() {
+        val obs = solveEngine.solve("Valid obs", "src-valid")
+        val h1 = Hypothesis(id = HypothesisId("hyp-valid"), statement = "Valid claim", supportingAshIds = listOf(obs.id))
+        val receipt = verificationEngine.verify(listOf(h1), listOf(obs))
+
+        val projected = DomState.project(listOf(h1), listOf(receipt), listOf(obs)) as DomState.Projected
+
+        val unverifiedHypothesis = Hypothesis(id = HypothesisId("hyp-forged"), statement = "Forged claim")
+
+        // Mutating hypotheses in copy() without a valid matching receipt MUST fail
+        assertFailsWith<ConstitutionalViolationException> {
+            projected.copy(verifiedHypotheses = listOf(unverifiedHypothesis))
+        }
+    }
+
+    @Test
+    fun `Adversarial Test 10 - Canonicalizer digest is sensitive to EvidenceRelation changes`() {
+        val ashId = AshId("ash-rel-test")
+        val refSupports = EvidenceRef(ashId, EvidenceRelation.SUPPORTS)
+        val refCounters = EvidenceRef(ashId, EvidenceRelation.COUNTERS)
+
+        val ceSupports = CounterEvidence(refSupports, CounterAssessment.UNRESOLVED)
+        val ceCounters = CounterEvidence(refCounters, CounterAssessment.UNRESOLVED)
+
+        val hSupports = Hypothesis(id = HypothesisId("hyp-rel"), statement = "Stmt", counterEvidence = listOf(ceSupports))
+        val hCounters = Hypothesis(id = HypothesisId("hyp-rel"), statement = "Stmt", counterEvidence = listOf(ceCounters))
+
+        val digestSupports = Canonicalizer.canonicalizeHypothesis(hSupports)
+        val digestCounters = Canonicalizer.canonicalizeHypothesis(hCounters)
+
+        assertFalse(digestSupports == digestCounters, "Canonicalizer MUST produce distinct digests when EvidenceRelation differs.")
+    }
+
+    @Test
+    fun `Adversarial Test 11 - VerificationEngine rejects duplicate observation IDs`() {
+        val obs1 = solveEngine.solve("Obs dup payload", "src-dup")
+        val obsDuplicate = AshRecord(
+            id = obs1.id,
+            payload = "Duplicate observation payload",
+            provenance = obs1.provenance
+        )
+        val hypothesis = Hypothesis(id = HypothesisId("hyp-dup-obs"), statement = "Claim", supportingAshIds = listOf(obs1.id))
+
+        assertFailsWith<IllegalArgumentException> {
+            verificationEngine.verify(listOf(hypothesis), listOf(obs1, obsDuplicate))
+        }
+    }
+
+    @Test
+    fun `Adversarial Test 12 - Returned collections are strictly unmodifiable`() {
+        val ashId = AshId("ash-unmod")
+        val ref = EvidenceRef(ashId)
+        val ce = CounterEvidence(ref)
+        val hypothesis = Hypothesis(
+            id = HypothesisId("hyp-unmod"),
+            statement = "Unmodifiable collection test",
+            supportingAshIds = listOf(ashId),
+            counterEvidence = listOf(ce)
+        )
+
+        assertFailsWith<UnsupportedOperationException> {
+            (hypothesis.supportingAshIds as MutableList<AshId>).add(AshId("ash-illegal"))
+        }
+
+        assertFailsWith<UnsupportedOperationException> {
+            (hypothesis.counterEvidence as MutableList<CounterEvidence>).add(CounterEvidence(EvidenceRef(AshId("ash-illegal"))))
+        }
+
+        val prov = Provenance(
+            id = ProvenanceId("prov-unmod"),
+            sourceId = "src",
+            timestamp = KernelTimestamp(100L),
+            rawOriginalValue = "raw",
+            parentGraph = listOf(ProvenanceId("parent-1"))
+        )
+
+        assertFailsWith<UnsupportedOperationException> {
+            (prov.parents as MutableList<ProvenanceId>).add(ProvenanceId("parent-illegal"))
+        }
+    }
 }

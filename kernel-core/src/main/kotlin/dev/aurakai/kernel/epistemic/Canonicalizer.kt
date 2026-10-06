@@ -30,7 +30,7 @@ object Canonicalizer {
         val encodedSuppEv = encodeList(sortedSuppEv)
 
         val sortedCountEv = h.counterEvidence
-            .map { "${it.evidence.ashId.value}:${it.assessment.name}" }
+            .map { "${it.evidence.ashId.value}:${it.evidence.relation.name}:${it.assessment.name}" }
             .sorted()
         val encodedCountEv = encodeList(sortedCountEv)
 
