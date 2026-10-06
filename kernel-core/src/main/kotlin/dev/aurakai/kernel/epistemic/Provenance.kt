@@ -1,5 +1,6 @@
 package dev.aurakai.kernel.epistemic
 
+import java.security.MessageDigest
 import java.util.Collections
 
 @JvmInline
@@ -33,11 +34,8 @@ data class Provenance(
 
     fun computeDigest(): String {
         val sortedParents = parents.map { it.value }.joinToString(",")
-        val raw = "${id.value}|$sourceId|${timestamp.epochMillis}|$rawOriginalValue|$sourceUri|$methodology|$sortedParents|${sourceDigest.value}"
-        var acc = 0L
-        for (ch in raw) {
-            acc = 31 * acc + ch.code
-        }
-        return acc.toULong().toString(16)
+        val raw = "${id.value.length}:${id.value}|${sourceId.length}:$sourceId|${timestamp.epochMillis}|$rawOriginalValue|${sourceUri.length}:$sourceUri|${methodology.length}:$methodology|${sortedParents.length}:$sortedParents|${sourceDigest.value.length}:${sourceDigest.value}"
+        val bytes = MessageDigest.getInstance("SHA-256").digest(raw.toByteArray(Charsets.UTF_8))
+        return bytes.joinToString("") { "%02x".format(it) }
     }
 }

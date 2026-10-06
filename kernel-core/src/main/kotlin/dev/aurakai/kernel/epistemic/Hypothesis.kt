@@ -1,5 +1,6 @@
 package dev.aurakai.kernel.epistemic
 
+import java.security.MessageDigest
 import java.util.Collections
 
 @JvmInline
@@ -138,7 +139,9 @@ class Hypothesis private constructor(
     }
 
     fun computeDigest(): String {
-        return Canonicalizer.canonicalizeHypothesis(this)
+        val canonical = Canonicalizer.canonicalizeHypothesis(this)
+        val bytes = MessageDigest.getInstance("SHA-256").digest(canonical.toByteArray(Charsets.UTF_8))
+        return bytes.joinToString("") { "%02x".format(it) }
     }
 
     companion object {
