@@ -25,7 +25,7 @@ class VerificationReceipt private constructor(
     val vetoExecuted: Boolean,
     val vetoReason: String?,
     val inputDigest: String,
-    val payloadDigest: String = inputDigest
+    val payloadDigest: String
 ) {
     val evaluatedHypothesisIds: List<HypothesisId> = Collections.unmodifiableList(evaluatedHypothesisIds.toList())
     val results: Map<HypothesisId, VerificationStatus> = Collections.unmodifiableMap(results.toMap())
