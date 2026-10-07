@@ -18,7 +18,7 @@ import kotlin.test.assertTrue
 
 /**
  * Skill 005 Standing Hostile Harness Suite.
- * Cryptographically proves and tests the H-001 through H-011 attack matrix.
+ * Cryptographically proves and tests the H-001 through H-016 attack matrix.
  */
 class HostileHarnessTest {
 
@@ -30,6 +30,9 @@ class HostileHarnessTest {
     @BeforeTest
     fun setUp() {
         EpochNonce.clearConsumedForTesting()
+        QuarantineRegistry.resetForTesting()
+        AuthoritativeThermalMonitor.resetForTesting()
+        KernelEpochManager.resetForTesting()
     }
 
     @Test
@@ -39,14 +42,12 @@ class HostileHarnessTest {
         val validReceipt = verificationEngine.verify(listOf(h), listOf(obs))
 
         // Catalyst attempts to forge proposal with arbitrary non-matching digest
-        val forgedProposal = triggerRouter.generateProposal("FORGED_ACTION", "unauthorized-digest-999", EpochNonce.generate())
+        val forgedProposal = triggerRouter.generateProposal("FORGED_ACTION", "unauthorized-digest-999", KernelEpochManager.issueAuthoritativeNonce())
 
         val ex = assertFailsWith<ConstitutionalViolationException> {
             admissionGate.evaluateAdmission(
                 proposal = forgedProposal,
-                receipt = validReceipt,
-                thermalTelemetry = ThermalTelemetry.evaluate(30.0, 1),
-                isQuarantined = false
+                receipt = validReceipt
             )
         }
         assertTrue(ex.message!!.contains(KernelRefusalReason.InvalidSnapshotBinding.code))
@@ -67,15 +68,13 @@ class HostileHarnessTest {
         val h = Hypothesis(id = HypothesisId("hyp-h003"), statement = "Stmt", supportingAshIds = listOf(obs.id))
         val receipt = verificationEngine.verify(listOf(h), listOf(obs))
 
-        val nonce = EpochNonce.generate()
+        val nonce = KernelEpochManager.issueAuthoritativeNonce()
         val proposal1 = triggerRouter.generateProposal("ACTION_1", receipt.payloadDigest, nonce)
 
         // First admission succeeds
         val admitted1 = admissionGate.evaluateAdmission(
             proposal = proposal1,
-            receipt = receipt,
-            thermalTelemetry = ThermalTelemetry.evaluate(30.0, 1),
-            isQuarantined = false
+            receipt = receipt
         )
         assertTrue(admitted1)
 
@@ -84,58 +83,10 @@ class HostileHarnessTest {
         val ex = assertFailsWith<ConstitutionalViolationException> {
             admissionGate.evaluateAdmission(
                 proposal = proposal2,
-                receipt = receipt,
-                thermalTelemetry = ThermalTelemetry.evaluate(30.0, 1),
-                isQuarantined = false
+                receipt = receipt
             )
         }
         assertTrue(ex.message!!.contains(KernelRefusalReason.ReplayAttackRejection.code))
-    }
-
-    @Test
-    fun `H-003 Concurrent Nonce Race Attack - ATOMIC_SINGLE_USE_ENFORCEMENT`() {
-        val obs = solveEngine.solve("Obs H-003-Concurrent", "sensor")
-        val h = Hypothesis(id = HypothesisId("hyp-h003-c"), statement = "Stmt", supportingAshIds = listOf(obs.id))
-        val receipt = verificationEngine.verify(listOf(h), listOf(obs))
-
-        val sharedNonce = EpochNonce.generate()
-        val proposal = triggerRouter.generateProposal("ACTION_CONCURRENT", receipt.payloadDigest, sharedNonce)
-
-        val threadCount = 10
-        val executor = Executors.newFixedThreadPool(threadCount)
-        val startLatch = CountDownLatch(1)
-        val doneLatch = CountDownLatch(threadCount)
-
-        val successCount = AtomicInteger(0)
-        val rejectionCount = AtomicInteger(0)
-
-        for (i in 0 until threadCount) {
-            executor.submit {
-                try {
-                    startLatch.await()
-                    val admitted = admissionGate.evaluateAdmission(
-                        proposal = proposal,
-                        receipt = receipt,
-                        thermalTelemetry = ThermalTelemetry.evaluate(30.0, 1),
-                        isQuarantined = false
-                    )
-                    if (admitted) successCount.incrementAndGet()
-                } catch (e: ConstitutionalViolationException) {
-                    if (e.message!!.contains(KernelRefusalReason.ReplayAttackRejection.code)) {
-                        rejectionCount.incrementAndGet()
-                    }
-                } finally {
-                    doneLatch.countDown()
-                }
-            }
-        }
-
-        startLatch.countDown() // Release all threads simultaneously
-        doneLatch.await()
-        executor.shutdown()
-
-        assertEquals(1, successCount.get(), "EXACTLY ONE thread must succeed in consuming the single-use nonce.")
-        assertEquals(threadCount - 1, rejectionCount.get(), "ALL OTHER concurrent threads must be rejected with REPLAY_ATTACK_REJECTION.")
     }
 
     @Test
@@ -147,18 +98,13 @@ class HostileHarnessTest {
 
         val proposal = triggerRouter.generateProposal("ACTION", receipt.payloadDigest, staleNonce)
 
-        // Mark nonce consumed to simulate stale/consumed epoch
-        EpochNonce.consume(staleNonce.nonceValue)
-
         val ex = assertFailsWith<ConstitutionalViolationException> {
             admissionGate.evaluateAdmission(
                 proposal = proposal,
-                receipt = receipt,
-                thermalTelemetry = ThermalTelemetry.evaluate(30.0, 1),
-                isQuarantined = false
+                receipt = receipt
             )
         }
-        assertTrue(ex.message!!.contains(KernelRefusalReason.ReplayAttackRejection.code))
+        assertTrue(ex.message!!.contains(KernelRefusalReason.StaleEpoch.code))
     }
 
     @Test
@@ -177,16 +123,14 @@ class HostileHarnessTest {
         val proposal = triggerRouter.generateProposal(
             actionType = "ACTION",
             payloadDigest = receipt.payloadDigest,
-            epochNonce = EpochNonce.generate(),
+            epochNonce = KernelEpochManager.issueAuthoritativeNonce(),
             snapshotBinding = invalidBinding
         )
 
         val ex = assertFailsWith<ConstitutionalViolationException> {
             admissionGate.evaluateAdmission(
                 proposal = proposal,
-                receipt = receipt,
-                thermalTelemetry = ThermalTelemetry.evaluate(30.0, 1),
-                isQuarantined = false
+                receipt = receipt
             )
         }
         assertTrue(ex.message!!.contains(KernelRefusalReason.InvalidSnapshotBinding.code))
@@ -207,7 +151,6 @@ class HostileHarnessTest {
         )
         val h = Hypothesis(id = HypothesisId("hyp-h006"), statement = "Stmt", supportingAshIds = listOf(blankProvenanceAsh.id))
 
-        // VerificationEngine verifies but requires valid provenance
         assertTrue(blankProvenanceAsh.provenance.sourceId.isBlank(), "Provenance source ID is blank.")
     }
 
@@ -240,14 +183,14 @@ class HostileHarnessTest {
         val obs = solveEngine.solve("Quarantined obs", "sensor")
         val h = Hypothesis(id = HypothesisId("hyp-h009"), statement = "Stmt", supportingAshIds = listOf(obs.id))
         val receipt = verificationEngine.verify(listOf(h), listOf(obs))
-        val proposal = triggerRouter.generateProposal("ACTION", receipt.payloadDigest, EpochNonce.generate())
+        val proposal = triggerRouter.generateProposal("ACTION", receipt.payloadDigest, KernelEpochManager.issueAuthoritativeNonce())
+
+        QuarantineRegistry.quarantine(receipt.payloadDigest)
 
         val ex = assertFailsWith<ConstitutionalViolationException> {
             admissionGate.evaluateAdmission(
                 proposal = proposal,
-                receipt = receipt,
-                thermalTelemetry = ThermalTelemetry.evaluate(30.0, 1),
-                isQuarantined = true // Attempting to bypass quarantine
+                receipt = receipt
             )
         }
         assertTrue(ex.message!!.contains(KernelRefusalReason.QuarantineBypass.code))
@@ -260,14 +203,12 @@ class HostileHarnessTest {
         val h = Hypothesis(id = HypothesisId("hyp-h010"), statement = "Stmt", supportingAshIds = listOf(obs.id))
         val receipt = verificationEngine.verify(listOf(h), listOf(obs))
 
-        val invalidProposal = triggerRouter.generateProposal("ACTION", "forged-payload-digest", EpochNonce.generate())
+        val invalidProposal = triggerRouter.generateProposal("ACTION", "forged-payload-digest", KernelEpochManager.issueAuthoritativeNonce())
 
         val ex = assertFailsWith<ConstitutionalViolationException> {
             admissionGate.evaluateAdmission(
                 proposal = invalidProposal,
                 receipt = receipt,
-                thermalTelemetry = ThermalTelemetry.evaluate(30.0, 1),
-                isQuarantined = false,
                 characterTensor = maxCharacter // High character tensor cannot bypass authority check
             )
         }
@@ -284,7 +225,7 @@ class HostileHarnessTest {
         )
         val receipt = verificationEngine.verify(listOf(hypothesis), listOf(obs))
 
-        val nonce = EpochNonce.generate()
+        val nonce = KernelEpochManager.issueAuthoritativeNonce()
         val binding = SnapshotBinding(
             blueprintDigest = receipt.payloadDigest,
             observationDigests = listOf(obs.id.value),
@@ -302,11 +243,131 @@ class HostileHarnessTest {
         val admitted = admissionGate.evaluateAdmission(
             proposal = validProposal,
             receipt = receipt,
-            thermalTelemetry = ThermalTelemetry.evaluate(36.0, 1),
-            isQuarantined = false,
             characterTensor = CharacterTensor(0.85, 0.90, 0.88, 0.92)
         )
 
         assertTrue(admitted, "H-011 Valid Complete End-to-End Path MUST be ADMITTED.")
+    }
+
+    @Test
+    fun `H-012 CallerQuarantineSpoof - QUARANTINE_BYPASS`() {
+        val obs = solveEngine.solve("Obs Quarantine Spoof", "sensor")
+        val h = Hypothesis(id = HypothesisId("hyp-qspoof"), statement = "Stmt", supportingAshIds = listOf(obs.id))
+        val receipt = verificationEngine.verify(listOf(h), listOf(obs))
+        val proposal = triggerRouter.generateProposal("ACTION", receipt.payloadDigest, KernelEpochManager.issueAuthoritativeNonce())
+
+        // Kernel QuarantineRegistry registers target payload quarantined
+        QuarantineRegistry.quarantine(proposal.payloadDigest)
+
+        // Caller attempts to bypass by passing isQuarantined = false to admission gate
+        val ex = assertFailsWith<ConstitutionalViolationException> {
+            admissionGate.evaluateAdmission(
+                proposal = proposal,
+                receipt = receipt,
+                thermalTelemetry = ThermalTelemetry.evaluate(30.0, 1),
+                isQuarantined = false // Caller attempts spoof
+            )
+        }
+        assertTrue(ex.message!!.contains(KernelRefusalReason.QuarantineBypass.code))
+    }
+
+    @Test
+    fun `H-013 CallerThermalSpoof - THERMAL_WALL_BREACH`() {
+        val obs = solveEngine.solve("Obs Thermal Spoof", "sensor")
+        val h = Hypothesis(id = HypothesisId("hyp-tspoof"), statement = "Stmt", supportingAshIds = listOf(obs.id))
+        val receipt = verificationEngine.verify(listOf(h), listOf(obs))
+        val proposal = triggerRouter.generateProposal("ACTION", receipt.payloadDigest, KernelEpochManager.issueAuthoritativeNonce())
+
+        // Kernel AuthoritativeThermalMonitor records freeze state (e.g. 43°C)
+        AuthoritativeThermalMonitor.updateTelemetry(43.0, 8)
+
+        // Caller attempts to pass benign thermal state (35°C)
+        val ex = assertFailsWith<ConstitutionalViolationException> {
+            admissionGate.evaluateAdmission(
+                proposal = proposal,
+                receipt = receipt,
+                thermalTelemetry = ThermalTelemetry.evaluate(35.0, 1), // Caller attempts spoof
+                isQuarantined = false
+            )
+        }
+        assertTrue(ex.message!!.contains(KernelRefusalReason.ThermalWallBreach.code))
+    }
+
+    @Test
+    fun `H-014 CallerNonceForgery - STALE_EPOCH`() {
+        val obs = solveEngine.solve("Obs Nonce Forgery", "sensor")
+        val h = Hypothesis(id = HypothesisId("hyp-nforgery"), statement = "Stmt", supportingAshIds = listOf(obs.id))
+        val receipt = verificationEngine.verify(listOf(h), listOf(obs))
+
+        // Caller advances epoch or uses unauthenticated epoch 999
+        val forgedNonce = EpochNonce.generate(epoch = EpochId(999L))
+        val proposal = triggerRouter.generateProposal("ACTION", receipt.payloadDigest, forgedNonce)
+
+        val ex = assertFailsWith<ConstitutionalViolationException> {
+            admissionGate.evaluateAdmission(
+                proposal = proposal,
+                receipt = receipt
+            )
+        }
+        assertTrue(ex.message!!.contains(KernelRefusalReason.StaleEpoch.code))
+    }
+
+    @Test
+    fun `H-015 ConcurrentNonceReuse - ATOMIC_SINGLE_USE_ENFORCEMENT`() {
+        val obs = solveEngine.solve("Obs H-015-Concurrent", "sensor")
+        val h = Hypothesis(id = HypothesisId("hyp-h015"), statement = "Stmt", supportingAshIds = listOf(obs.id))
+        val receipt = verificationEngine.verify(listOf(h), listOf(obs))
+
+        val sharedNonce = KernelEpochManager.issueAuthoritativeNonce()
+        val proposal = triggerRouter.generateProposal("ACTION_CONCURRENT", receipt.payloadDigest, sharedNonce)
+
+        val threadCount = 10
+        val executor = Executors.newFixedThreadPool(threadCount)
+        val startLatch = CountDownLatch(1)
+        val doneLatch = CountDownLatch(threadCount)
+
+        val successCount = AtomicInteger(0)
+        val rejectionCount = AtomicInteger(0)
+
+        for (i in 0 until threadCount) {
+            executor.submit {
+                try {
+                    startLatch.await()
+                    val admitted = admissionGate.evaluateAdmission(
+                        proposal = proposal,
+                        receipt = receipt
+                    )
+                    if (admitted) successCount.incrementAndGet()
+                } catch (e: ConstitutionalViolationException) {
+                    if (e.message!!.contains(KernelRefusalReason.ReplayAttackRejection.code)) {
+                        rejectionCount.incrementAndGet()
+                    }
+                } finally {
+                    doneLatch.countDown()
+                }
+            }
+        }
+
+        startLatch.countDown()
+        doneLatch.await()
+        executor.shutdown()
+
+        assertEquals(1, successCount.get(), "EXACTLY ONE thread must succeed in consuming the single-use nonce.")
+        assertEquals(threadCount - 1, rejectionCount.get(), "ALL OTHER concurrent threads must be rejected with REPLAY_ATTACK_REJECTION.")
+    }
+
+    @Test
+    fun `H-016 ReceiptDoubleCounting - IDEMPOTENT_ACCOUNTING`() {
+        val policyGate = DefaultMetaInstructPolicyGate()
+        val obs = solveEngine.solve("Obs Double Counting", "sensor")
+        val h = Hypothesis(id = HypothesisId("hyp-double"), statement = "Stmt", supportingAshIds = listOf(obs.id))
+        val receipt = verificationEngine.verify(listOf(h), listOf(obs))
+
+        // Present receipt 3 times
+        policyGate.recordVerifiedReceipt(receipt)
+        policyGate.recordVerifiedReceipt(receipt)
+        policyGate.recordVerifiedReceipt(receipt)
+
+        assertEquals(1L, policyGate.getVerifiedInsightCount(), "Repeated presentation of same VerificationReceipt MUST be idempotent (count = 1).")
     }
 }

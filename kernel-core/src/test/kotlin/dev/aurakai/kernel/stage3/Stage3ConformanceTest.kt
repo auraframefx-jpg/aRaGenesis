@@ -32,6 +32,9 @@ class Stage3ConformanceTest {
     @BeforeTest
     fun setUp() {
         EpochNonce.clearConsumedForTesting()
+        QuarantineRegistry.resetForTesting()
+        AuthoritativeThermalMonitor.resetForTesting()
+        KernelEpochManager.resetForTesting()
     }
 
     @Test
@@ -46,15 +49,13 @@ class Stage3ConformanceTest {
         val invalidProposal = triggerRouter.generateProposal(
             actionType = "ACTION_MUTATE",
             payloadDigest = "invalid-mismatched-digest",
-            epochNonce = EpochNonce.generate()
+            epochNonce = KernelEpochManager.issueAuthoritativeNonce()
         )
 
         val ex = assertFailsWith<ConstitutionalViolationException> {
             admissionGate.evaluateAdmission(
                 proposal = invalidProposal,
                 receipt = receipt,
-                thermalTelemetry = ThermalTelemetry.evaluate(35.0, 1),
-                isQuarantined = false,
                 characterTensor = highCharacter
             )
         }
@@ -70,7 +71,7 @@ class Stage3ConformanceTest {
         val h = Hypothesis(id = HypothesisId("hyp-2"), statement = "Statement 2", supportingAshIds = listOf(obs.id))
         val receipt = verificationEngine.verify(listOf(h), listOf(obs))
 
-        val nonce = EpochNonce.generate()
+        val nonce = KernelEpochManager.issueAuthoritativeNonce()
         val snapshotBinding = SnapshotBinding(
             blueprintDigest = receipt.payloadDigest,
             observationDigests = listOf(obs.id.value),
@@ -88,8 +89,6 @@ class Stage3ConformanceTest {
         val admitted = admissionGate.evaluateAdmission(
             proposal = validProposal,
             receipt = receipt,
-            thermalTelemetry = ThermalTelemetry.evaluate(35.0, 1),
-            isQuarantined = false,
             characterTensor = lowCharacter
         )
 
@@ -101,17 +100,17 @@ class Stage3ConformanceTest {
         val nanTelemetry = ThermalTelemetry.evaluate(Double.NaN, 2)
         assertEquals(ThermalState.SOVEREIGN_STATE_FREEZE, nanTelemetry.state)
 
-        val obs = solveEngine.solve("Obs NaN", "src")
+        val obs = solveEngine.solve("Obs NaN", "sensor")
         val h = Hypothesis(id = HypothesisId("hyp-nan"), statement = "Stmt", supportingAshIds = listOf(obs.id))
         val receipt = verificationEngine.verify(listOf(h), listOf(obs))
-        val proposal = triggerRouter.generateProposal("ACTION", receipt.payloadDigest, EpochNonce.generate())
+        val proposal = triggerRouter.generateProposal("ACTION", receipt.payloadDigest, KernelEpochManager.issueAuthoritativeNonce())
+
+        AuthoritativeThermalMonitor.updateTelemetry(Double.NaN, 2)
 
         val ex = assertFailsWith<ConstitutionalViolationException> {
             admissionGate.evaluateAdmission(
                 proposal = proposal,
-                receipt = receipt,
-                thermalTelemetry = nanTelemetry,
-                isQuarantined = false
+                receipt = receipt
             )
         }
         assertTrue(ex.message!!.contains(KernelRefusalReason.ThermalWallBreach.code))
@@ -122,17 +121,17 @@ class Stage3ConformanceTest {
         val infTelemetry = ThermalTelemetry.evaluate(Double.POSITIVE_INFINITY, 2)
         assertEquals(ThermalState.SOVEREIGN_STATE_FREEZE, infTelemetry.state)
 
-        val obs = solveEngine.solve("Obs Inf", "src")
+        val obs = solveEngine.solve("Obs Inf", "sensor")
         val h = Hypothesis(id = HypothesisId("hyp-inf"), statement = "Stmt", supportingAshIds = listOf(obs.id))
         val receipt = verificationEngine.verify(listOf(h), listOf(obs))
-        val proposal = triggerRouter.generateProposal("ACTION", receipt.payloadDigest, EpochNonce.generate())
+        val proposal = triggerRouter.generateProposal("ACTION", receipt.payloadDigest, KernelEpochManager.issueAuthoritativeNonce())
+
+        AuthoritativeThermalMonitor.updateTelemetry(Double.POSITIVE_INFINITY, 2)
 
         val ex = assertFailsWith<ConstitutionalViolationException> {
             admissionGate.evaluateAdmission(
                 proposal = proposal,
-                receipt = receipt,
-                thermalTelemetry = infTelemetry,
-                isQuarantined = false
+                receipt = receipt
             )
         }
         assertTrue(ex.message!!.contains(KernelRefusalReason.ThermalWallBreach.code))
@@ -140,19 +139,17 @@ class Stage3ConformanceTest {
 
     @Test
     fun `test_replay_attack_with_consumed_epoch_nonce_rejected`() {
-        val obs = solveEngine.solve("Obs Replay", "src")
+        val obs = solveEngine.solve("Obs Replay", "sensor")
         val h = Hypothesis(id = HypothesisId("hyp-replay"), statement = "Stmt", supportingAshIds = listOf(obs.id))
         val receipt = verificationEngine.verify(listOf(h), listOf(obs))
 
-        val nonce = EpochNonce.generate()
+        val nonce = KernelEpochManager.issueAuthoritativeNonce()
         val proposal1 = triggerRouter.generateProposal("ACTION_1", receipt.payloadDigest, nonce)
 
         // First admission succeeds
         val admitted1 = admissionGate.evaluateAdmission(
             proposal = proposal1,
-            receipt = receipt,
-            thermalTelemetry = ThermalTelemetry.evaluate(30.0, 1),
-            isQuarantined = false
+            receipt = receipt
         )
         assertTrue(admitted1)
 
@@ -161,9 +158,7 @@ class Stage3ConformanceTest {
         val ex = assertFailsWith<ConstitutionalViolationException> {
             admissionGate.evaluateAdmission(
                 proposal = proposal2,
-                receipt = receipt,
-                thermalTelemetry = ThermalTelemetry.evaluate(30.0, 1),
-                isQuarantined = false
+                receipt = receipt
             )
         }
         assertTrue(ex.message!!.contains(KernelRefusalReason.ReplayAttackRejection.code))
@@ -171,7 +166,7 @@ class Stage3ConformanceTest {
 
     @Test
     fun `test_mismatched_snapshot_binding_rejected`() {
-        val obs = solveEngine.solve("Obs Snapshot", "src")
+        val obs = solveEngine.solve("Obs Snapshot", "sensor")
         val h = Hypothesis(id = HypothesisId("hyp-snap"), statement = "Stmt", supportingAshIds = listOf(obs.id))
         val receipt = verificationEngine.verify(listOf(h), listOf(obs))
 
@@ -185,16 +180,14 @@ class Stage3ConformanceTest {
         val proposal = triggerRouter.generateProposal(
             actionType = "ACTION",
             payloadDigest = receipt.payloadDigest,
-            epochNonce = EpochNonce.generate(),
+            epochNonce = KernelEpochManager.issueAuthoritativeNonce(),
             snapshotBinding = invalidBinding
         )
 
         val ex = assertFailsWith<ConstitutionalViolationException> {
             admissionGate.evaluateAdmission(
                 proposal = proposal,
-                receipt = receipt,
-                thermalTelemetry = ThermalTelemetry.evaluate(30.0, 1),
-                isQuarantined = false
+                receipt = receipt
             )
         }
         assertTrue(ex.message!!.contains(KernelRefusalReason.InvalidSnapshotBinding.code))
@@ -267,7 +260,7 @@ class Stage3ConformanceTest {
         assertEquals(1L, metaGate.getVerifiedInsightCount())
 
         // 5. Fresh Epoch Nonce & Snapshot Binding
-        val nonce = EpochNonce.generate()
+        val nonce = KernelEpochManager.issueAuthoritativeNonce()
         val binding = SnapshotBinding(
             blueprintDigest = receipt.payloadDigest,
             observationDigests = listOf(obs.id.value),
@@ -287,8 +280,6 @@ class Stage3ConformanceTest {
         val admitted = admissionGate.evaluateAdmission(
             proposal = proposal,
             receipt = receipt,
-            thermalTelemetry = ThermalTelemetry.evaluate(36.5, 2),
-            isQuarantined = false,
             characterTensor = CharacterTensor(0.8, 0.85, 0.9, 0.88)
         )
 
