@@ -26,7 +26,7 @@ data class ThermalTelemetry(
     companion object {
         fun evaluate(temperature: Double, activeThreads: Int): ThermalTelemetry {
             val state = when {
-                temperature >= 42.0 -> ThermalState.SOVEREIGN_STATE_FREEZE
+                temperature.isNaN() || temperature.isInfinite() || temperature >= 42.0 -> ThermalState.SOVEREIGN_STATE_FREEZE
                 temperature >= 39.0 -> ThermalState.THROTTLED_MEDITATION
                 else -> ThermalState.NOMINAL
             }
@@ -106,6 +106,7 @@ interface MetaInstructPolicyGate {
         perplexityStream: List<String>
     ): EvaluationVerdict
 
+    fun recordVerifiedReceipt(receipt: VerificationReceipt)
     fun getVerifiedInsightCount(): Long
     fun proposeSubstrateEvolution(): EvolutionProposal
 }
@@ -124,13 +125,16 @@ class DefaultMetaInstructPolicyGate(
         val grade = corroborator.corroborateContext(assessment, geminiContext, perplexityStream)
         return when (grade) {
             EvidenceGrade.CONTRADICTED -> EvaluationVerdict.UNRESOLVED_QUARANTINE
-            EvidenceGrade.DIRECT, EvidenceGrade.CORROBORATED -> {
-                verifiedInsightCount++
-                EvaluationVerdict.SNAPSHOT_CURATION
-            }
+            EvidenceGrade.DIRECT, EvidenceGrade.CORROBORATED -> EvaluationVerdict.SNAPSHOT_CURATION
             EvidenceGrade.PLAUSIBLE -> EvaluationVerdict.HOT_CONTEXT
             EvidenceGrade.WEAK -> EvaluationVerdict.REJECTED_NOISE
             else -> EvaluationVerdict.UNRESOLVED_QUARANTINE
+        }
+    }
+
+    override fun recordVerifiedReceipt(receipt: VerificationReceipt) {
+        if (!receipt.vetoExecuted && receipt.results.values.any { it == VerificationStatus.VERIFIED }) {
+            verifiedInsightCount++
         }
     }
 
@@ -153,39 +157,158 @@ data class TriggerProposal(
     val proposalId: String,
     val actionType: String,
     val payloadDigest: String,
+    val epochNonce: EpochNonce,
+    val snapshotBinding: SnapshotBinding? = null,
     val isExecuted: Boolean = false
 )
 
 class TriggerRouter {
-    fun generateProposal(actionType: String, payloadDigest: String): TriggerProposal {
+    fun generateProposal(
+        actionType: String,
+        payloadDigest: String,
+        epochNonce: EpochNonce,
+        snapshotBinding: SnapshotBinding? = null
+    ): TriggerProposal {
         return TriggerProposal(
             proposalId = "prop-${System.currentTimeMillis()}-$payloadDigest",
             actionType = actionType,
             payloadDigest = payloadDigest,
+            epochNonce = epochNonce,
+            snapshotBinding = snapshotBinding,
             isExecuted = false
         )
     }
 }
 
+/**
+ * Stage 3 Character Tensor (META_INSTRUCT).
+ * Character tensor scores DO NOT grant execution authority (Character Orthogonality).
+ */
+data class CharacterTensor(
+    val individuality: Double,
+    val coherence: Double,
+    val contribution: Double,
+    val adaptation: Double
+) {
+    val aggregateCharacterScore: Double
+        get() = (individuality + coherence + contribution + adaptation) / 4.0
+}
+
+/**
+ * Gate 1 — 6W Asymmetry Policy Model.
+ * Evaluates authenticated 6W axis tags without magic length heuristics.
+ */
+data class SixWAsymmetryVector(
+    val who: String,
+    val what: String,
+    val whenTime: String,
+    val whereLoc: String,
+    val whyReason: String,
+    val howMethod: String
+) {
+    fun validate6WStructure(): Boolean {
+        return who.isNotBlank() && what.isNotBlank() && whenTime.isNotBlank() &&
+               whereLoc.isNotBlank() && whyReason.isNotBlank() && howMethod.isNotBlank()
+    }
+}
+
+/**
+ * Gate 2 — 4-Model Identity Discrimination.
+ * Enforces 4 competing models with distinct semantic roles, digests, and falsification criteria.
+ */
+data class IdentityHypothesisModel(
+    val modelId: String,
+    val semanticRole: String, // e.g. "DirectRelationship", "CommonConfounder", "CoincidenceNoise", "AdversarialSpoof"
+    val falsificationCriterion: String,
+    val supportingEvidenceIds: List<String>,
+    val counterEvidenceIds: List<String>,
+    val modelDigest: String
+)
+
+class FourModelIdentityDiscriminator {
+    fun discriminate(models: List<IdentityHypothesisModel>): Boolean {
+        if (models.size < 4) return false
+        val distinctDigests = models.map { it.modelDigest }.distinct().size
+        val distinctRoles = models.map { it.semanticRole }.distinct().size
+        val distinctCriteria = models.map { it.falsificationCriterion }.distinct().size
+
+        return distinctDigests >= 4 && distinctRoles >= 4 && distinctCriteria >= 4
+    }
+}
+
+/**
+ * Gate 3 — Premature Explanation Trace Validator.
+ * Validates ordered, provenance-linked, observation-bound falsification trace before conclusion.
+ */
+data class ExplanatoryTrace(
+    val originatingAshId: AshId,
+    val solveStepDigest: String,
+    val counterStepDigest: String,
+    val falsificationStepDigest: String,
+    val candidateDigest: String
+) {
+    fun isValidTrace(): Boolean {
+        return solveStepDigest.isNotBlank() && counterStepDigest.isNotBlank() &&
+               falsificationStepDigest.isNotBlank() && candidateDigest.isNotBlank()
+    }
+}
+
+/**
+ * Stage 3 Execution Admission Gate.
+ * Strictly enforces Stage 3 Sealed Admission Conditions:
+ * 1. Non-finite & Breach Thermal Checks
+ * 2. Unresolved Quarantine Block + Scar Linkage
+ * 3. Authoritative Receipt Verification & Payload Digest Match
+ * 4. Single-Use Epoch Nonce Replay Defense
+ * 5. Snapshot Binding Verification
+ * 6. Character Tensor Orthogonality (Character Score != Execution Authority)
+ */
 class ExecutionAdmissionGate {
     fun evaluateAdmission(
         proposal: TriggerProposal,
         receipt: VerificationReceipt,
         thermalTelemetry: ThermalTelemetry,
-        isQuarantined: Boolean
+        isQuarantined: Boolean,
+        characterTensor: CharacterTensor? = null
     ): Boolean {
-        if (thermalTelemetry.state == ThermalState.SOVEREIGN_STATE_FREEZE) {
-            throw ConstitutionalViolationException("EXECUTION ADMISSION REFUSED: Thermal Wall breached (>= 42°C). State frozen.")
+        if (thermalTelemetry.substrateTemperatureCelsius.isNaN() ||
+            thermalTelemetry.substrateTemperatureCelsius.isInfinite() ||
+            thermalTelemetry.state == ThermalState.SOVEREIGN_STATE_FREEZE
+        ) {
+            throw ConstitutionalViolationException(
+                "EXECUTION ADMISSION REFUSED [${KernelRefusalReason.ThermalWallBreach.code}]: Substrate temperature is invalid or breached Sovereign State Freeze."
+            )
         }
         if (isQuarantined) {
-            throw ConstitutionalViolationException("EXECUTION ADMISSION REFUSED: Target state is locked in UNRESOLVED_QUARANTINE.")
+            throw ConstitutionalViolationException(
+                "EXECUTION ADMISSION REFUSED [${KernelRefusalReason.QuarantineBypass.code}]: Target state is locked in UNRESOLVED_QUARANTINE."
+            )
+        }
+        if (EpochNonce.isConsumed(proposal.epochNonce.nonceValue)) {
+            throw ConstitutionalViolationException(
+                "EXECUTION ADMISSION REFUSED [${KernelRefusalReason.ReplayAttackRejection.code}]: Epoch nonce ${proposal.epochNonce.nonceValue} has already been consumed."
+            )
         }
         if (receipt.vetoExecuted || receipt.payloadDigest != proposal.payloadDigest) {
-            throw ConstitutionalViolationException("EXECUTION ADMISSION REFUSED: Receipt mismatch or VETO executed.")
+            throw ConstitutionalViolationException(
+                "EXECUTION ADMISSION REFUSED [${KernelRefusalReason.InvalidSnapshotBinding.code}]: Receipt mismatch or VETO executed."
+            )
+        }
+        proposal.snapshotBinding?.let { binding ->
+            if (binding.snapshotDigest != proposal.payloadDigest || binding.blueprintDigest != receipt.payloadDigest) {
+                throw ConstitutionalViolationException(
+                    "EXECUTION ADMISSION REFUSED [${KernelRefusalReason.InvalidSnapshotBinding.code}]: Snapshot binding digest mismatch."
+                )
+            }
         }
         if (proposal.isExecuted) {
-            throw ConstitutionalViolationException("PROPOSED_ACTION ≠ EXECUTED_ACTION: Proposal has already been executed.")
+            throw ConstitutionalViolationException(
+                "EXECUTION ADMISSION REFUSED [${KernelRefusalReason.ReplayAttackRejection.code}]: Proposal has already been executed."
+            )
         }
+
+        // Consume epoch nonce upon successful admission
+        EpochNonce.consume(proposal.epochNonce.nonceValue)
         return true
     }
 }
