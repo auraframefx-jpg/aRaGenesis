@@ -5,6 +5,9 @@ import dev.aurakai.kernel.epistemic.*
 import dev.aurakai.kernel.pipeline.SolveEngine
 import dev.aurakai.kernel.verification.*
 import java.lang.reflect.Modifier
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -87,6 +90,52 @@ class HostileHarnessTest {
             )
         }
         assertTrue(ex.message!!.contains(KernelRefusalReason.ReplayAttackRejection.code))
+    }
+
+    @Test
+    fun `H-003 Concurrent Nonce Race Attack - ATOMIC_SINGLE_USE_ENFORCEMENT`() {
+        val obs = solveEngine.solve("Obs H-003-Concurrent", "sensor")
+        val h = Hypothesis(id = HypothesisId("hyp-h003-c"), statement = "Stmt", supportingAshIds = listOf(obs.id))
+        val receipt = verificationEngine.verify(listOf(h), listOf(obs))
+
+        val sharedNonce = EpochNonce.generate()
+        val proposal = triggerRouter.generateProposal("ACTION_CONCURRENT", receipt.payloadDigest, sharedNonce)
+
+        val threadCount = 10
+        val executor = Executors.newFixedThreadPool(threadCount)
+        val startLatch = CountDownLatch(1)
+        val doneLatch = CountDownLatch(threadCount)
+
+        val successCount = AtomicInteger(0)
+        val rejectionCount = AtomicInteger(0)
+
+        for (i in 0 until threadCount) {
+            executor.submit {
+                try {
+                    startLatch.await()
+                    val admitted = admissionGate.evaluateAdmission(
+                        proposal = proposal,
+                        receipt = receipt,
+                        thermalTelemetry = ThermalTelemetry.evaluate(30.0, 1),
+                        isQuarantined = false
+                    )
+                    if (admitted) successCount.incrementAndGet()
+                } catch (e: ConstitutionalViolationException) {
+                    if (e.message!!.contains(KernelRefusalReason.ReplayAttackRejection.code)) {
+                        rejectionCount.incrementAndGet()
+                    }
+                } finally {
+                    doneLatch.countDown()
+                }
+            }
+        }
+
+        startLatch.countDown() // Release all threads simultaneously
+        doneLatch.await()
+        executor.shutdown()
+
+        assertEquals(1, successCount.get(), "EXACTLY ONE thread must succeed in consuming the single-use nonce.")
+        assertEquals(threadCount - 1, rejectionCount.get(), "ALL OTHER concurrent threads must be rejected with REPLAY_ATTACK_REJECTION.")
     }
 
     @Test

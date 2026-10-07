@@ -259,7 +259,7 @@ data class ExplanatoryTrace(
  * 1. Non-finite & Breach Thermal Checks
  * 2. Unresolved Quarantine Block + Scar Linkage
  * 3. Authoritative Receipt Verification & Payload Digest Match
- * 4. Single-Use Epoch Nonce Replay Defense
+ * 4. Single-Use Epoch Nonce Replay Defense (Atomic Compare-and-Set)
  * 5. Snapshot Binding Verification
  * 6. Character Tensor Orthogonality (Character Score != Execution Authority)
  */
@@ -284,11 +284,6 @@ class ExecutionAdmissionGate {
                 "EXECUTION ADMISSION REFUSED [${KernelRefusalReason.QuarantineBypass.code}]: Target state is locked in UNRESOLVED_QUARANTINE."
             )
         }
-        if (EpochNonce.isConsumed(proposal.epochNonce.nonceValue)) {
-            throw ConstitutionalViolationException(
-                "EXECUTION ADMISSION REFUSED [${KernelRefusalReason.ReplayAttackRejection.code}]: Epoch nonce ${proposal.epochNonce.nonceValue} has already been consumed."
-            )
-        }
         if (receipt.vetoExecuted || receipt.payloadDigest != proposal.payloadDigest) {
             throw ConstitutionalViolationException(
                 "EXECUTION ADMISSION REFUSED [${KernelRefusalReason.InvalidSnapshotBinding.code}]: Receipt mismatch or VETO executed."
@@ -307,8 +302,13 @@ class ExecutionAdmissionGate {
             )
         }
 
-        // Consume epoch nonce upon successful admission
-        EpochNonce.consume(proposal.epochNonce.nonceValue)
+        // Atomic Check-and-Consume Nonce (Prevents Check-Then-Act TOCTOU race conditions under concurrency)
+        if (!EpochNonce.consume(proposal.epochNonce.nonceValue)) {
+            throw ConstitutionalViolationException(
+                "EXECUTION ADMISSION REFUSED [${KernelRefusalReason.ReplayAttackRejection.code}]: Epoch nonce ${proposal.epochNonce.nonceValue} has already been consumed."
+            )
+        }
+
         return true
     }
 }
