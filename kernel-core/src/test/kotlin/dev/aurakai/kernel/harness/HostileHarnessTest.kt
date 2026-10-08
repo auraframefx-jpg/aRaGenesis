@@ -18,7 +18,7 @@ import kotlin.test.assertTrue
 
 /**
  * Skill 005 Standing Hostile Harness Suite.
- * Cryptographically proves and tests the H-001 through H-016 attack matrix.
+ * Cryptographically proves and tests the H-001 through H-016 + H-001-R attack matrix.
  */
 class HostileHarnessTest {
 
@@ -51,6 +51,14 @@ class HostileHarnessTest {
             )
         }
         assertTrue(ex.message!!.contains(KernelRefusalReason.InvalidSnapshotBinding.code))
+    }
+
+    @Test
+    fun `H-001-R Non-Engine Receipt Mint Attack - FILE_PRIVATE_MINTING_ISOLATION`() {
+        val clazz = VerificationReceipt::class.java
+        val primaryConstructor = clazz.declaredConstructors.firstOrNull { !it.isSynthetic }
+        assertNotNull(primaryConstructor, "VerificationReceipt must have a declared primary constructor.")
+        assertTrue(Modifier.isPrivate(primaryConstructor.modifiers), "Primary constructor of VerificationReceipt MUST be private to prevent direct instantiation.")
     }
 
     @Test

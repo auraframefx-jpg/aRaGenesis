@@ -26,8 +26,9 @@ data class ThermalTelemetry(
 ) {
     companion object {
         fun evaluate(temperature: Double, activeThreads: Int): ThermalTelemetry {
+            // Require temperature to be finite (reject NaN, +Infinity, -Infinity immediately to SOVEREIGN_STATE_FREEZE)
             val state = when {
-                temperature.isNaN() || temperature.isInfinite() || temperature >= 42.0 -> ThermalState.SOVEREIGN_STATE_FREEZE
+                !temperature.isFinite() || temperature >= 42.0 -> ThermalState.SOVEREIGN_STATE_FREEZE
                 temperature >= 39.0 -> ThermalState.THROTTLED_MEDITATION
                 else -> ThermalState.NOMINAL
             }
@@ -350,12 +351,11 @@ class ExecutionAdmissionGate {
         characterTensor: CharacterTensor? = null
     ): Boolean {
         val thermalTelemetry = AuthoritativeThermalMonitor.getAuthoritativeTelemetry()
-        if (thermalTelemetry.substrateTemperatureCelsius.isNaN() ||
-            thermalTelemetry.substrateTemperatureCelsius.isInfinite() ||
+        if (!thermalTelemetry.substrateTemperatureCelsius.isFinite() ||
             thermalTelemetry.state == ThermalState.SOVEREIGN_STATE_FREEZE
         ) {
             throw ConstitutionalViolationException(
-                "EXECUTION ADMISSION REFUSED [${KernelRefusalReason.ThermalWallBreach.code}]: Authoritative substrate temperature is invalid or breached Sovereign State Freeze."
+                "EXECUTION ADMISSION REFUSED [${KernelRefusalReason.ThermalWallBreach.code}]: Authoritative substrate temperature is non-finite or breached Sovereign State Freeze."
             )
         }
 
@@ -420,7 +420,7 @@ class ExecutionAdmissionGate {
             QuarantineRegistry.quarantine(proposal.payloadDigest)
         }
         // Only update authoritative monitor if caller telemetry indicates freeze or throttle (cannot downgrade)
-        if (thermalTelemetry.state == ThermalState.SOVEREIGN_STATE_FREEZE) {
+        if (!thermalTelemetry.substrateTemperatureCelsius.isFinite() || thermalTelemetry.state == ThermalState.SOVEREIGN_STATE_FREEZE) {
             AuthoritativeThermalMonitor.updateTelemetry(thermalTelemetry.substrateTemperatureCelsius, thermalTelemetry.activeParsingThreads)
         }
 
