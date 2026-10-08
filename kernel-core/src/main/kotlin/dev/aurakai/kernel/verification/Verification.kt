@@ -15,7 +15,8 @@ enum class VerificationStatus {
 
 /**
  * Immutable Verification Receipt.
- * Primary constructor is private to Verification.kt file so receipt instances can ONLY be minted by VerificationEngine.
+ * Primary constructor is private.
+ * Minting function is internal to kernel-core module (VerificationReceipt.mint).
  */
 class VerificationReceipt private constructor(
     val id: ReceiptId,
@@ -25,7 +26,7 @@ class VerificationReceipt private constructor(
     val vetoExecuted: Boolean,
     val vetoReason: String?,
     val inputDigest: String,
-    val payloadDigest: String = inputDigest
+    val payloadDigest: String
 ) {
     val evaluatedHypothesisIds: List<HypothesisId> = Collections.unmodifiableList(evaluatedHypothesisIds.toList())
     val results: Map<HypothesisId, VerificationStatus> = Collections.unmodifiableMap(results.toMap())

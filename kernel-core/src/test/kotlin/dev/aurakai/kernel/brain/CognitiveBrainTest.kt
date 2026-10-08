@@ -4,6 +4,7 @@ import dev.aurakai.kernel.dom.DomState
 import dev.aurakai.kernel.epistemic.*
 import dev.aurakai.kernel.pipeline.SolveEngine
 import dev.aurakai.kernel.verification.*
+import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -12,7 +13,7 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
- * Mandatory Conformance Vector Test Suite for Cognitive Brain Runtime (PR #2).
+ * Mandatory Conformance Vector Test Suite for Cognitive Brain Runtime (PR #2 / Stage 3).
  * Verifies negative bounds, thermal wall freeze, TOCTOU payload integrity,
  * cross-modal contradiction quarantine, and execution admission guarantees.
  */
@@ -23,6 +24,14 @@ class CognitiveBrainTest {
     private val triggerRouter = TriggerRouter()
     private val admissionGate = ExecutionAdmissionGate()
 
+    @BeforeTest
+    fun setUp() {
+        EpochNonce.clearConsumedForTesting()
+        QuarantineRegistry.resetForTesting()
+        AuthoritativeThermalMonitor.resetForTesting()
+        KernelEpochManager.resetForTesting()
+    }
+
     @Test
     fun `test_thermal_wall_breach_forces_state_freeze`() {
         val thermalHigh = ThermalTelemetry.evaluate(42.5, 8)
@@ -31,7 +40,7 @@ class CognitiveBrainTest {
         val obs = solveEngine.solve("Thermal test obs", "sensor-thermal")
         val h = Hypothesis(id = HypothesisId("hyp-thermal"), statement = "Normal status", supportingAshIds = listOf(obs.id))
         val receipt = verificationEngine.verify(listOf(h), listOf(obs))
-        val proposal = triggerRouter.generateProposal("ACTION_EXECUTE", receipt.payloadDigest)
+        val proposal = triggerRouter.generateProposal("ACTION_EXECUTE", receipt.payloadDigest, KernelEpochManager.issueAuthoritativeNonce())
 
         assertFailsWith<ConstitutionalViolationException> {
             admissionGate.evaluateAdmission(
@@ -87,7 +96,7 @@ class CognitiveBrainTest {
 
     @Test
     fun `test_proposed_action_never_equals_executed_action`() {
-        val proposal = triggerRouter.generateProposal("PURGE_CACHE", "digest-123")
+        val proposal = triggerRouter.generateProposal("PURGE_CACHE", "digest-123", KernelEpochManager.issueAuthoritativeNonce())
         assertFalse(proposal.isExecuted, "TriggerProposal must never be constructed as executed.")
 
         val executedProposal = proposal.copy(isExecuted = true)
@@ -107,7 +116,7 @@ class CognitiveBrainTest {
 
     @Test
     fun `test_meta_instruct_cannot_directly_mutate_kernel`() {
-        val policyGate = DefaultMetaInstructPolicyGate(verifiedInsightCount = 50L)
+        val policyGate = DefaultMetaInstructPolicyGate(initialVerifiedInsightCount = 50L)
 
         assertFailsWith<IllegalArgumentException> {
             policyGate.proposeSubstrateEvolution()
@@ -127,7 +136,7 @@ class CognitiveBrainTest {
 
     @Test
     fun `test_evolution_threshold_creates_proposal_not_mutation`() {
-        val policyGate = DefaultMetaInstructPolicyGate(verifiedInsightCount = 100L)
+        val policyGate = DefaultMetaInstructPolicyGate(initialVerifiedInsightCount = 100L)
         val proposal = policyGate.proposeSubstrateEvolution()
 
         assertNotNull(proposal)
@@ -161,7 +170,7 @@ class CognitiveBrainTest {
         val obs = solveEngine.solve("Quarantined signal", "src")
         val h = Hypothesis(id = HypothesisId("hyp-quar"), statement = "Quarantined statement", supportingAshIds = listOf(obs.id))
         val receipt = verificationEngine.verify(listOf(h), listOf(obs))
-        val proposal = triggerRouter.generateProposal("ACTION", receipt.payloadDigest)
+        val proposal = triggerRouter.generateProposal("ACTION", receipt.payloadDigest, KernelEpochManager.issueAuthoritativeNonce())
 
         assertFailsWith<ConstitutionalViolationException> {
             admissionGate.evaluateAdmission(
@@ -179,7 +188,7 @@ class CognitiveBrainTest {
         val h = Hypothesis(id = HypothesisId("hyp-caller"), statement = "Statement", supportingAshIds = listOf(obs.id))
         val validReceipt = verificationEngine.verify(listOf(h), listOf(obs))
 
-        val forgedProposal = triggerRouter.generateProposal("FORGED_ACTION", "mismatched-digest-666")
+        val forgedProposal = triggerRouter.generateProposal("FORGED_ACTION", "mismatched-digest-666", KernelEpochManager.issueAuthoritativeNonce())
 
         assertFailsWith<ConstitutionalViolationException> {
             admissionGate.evaluateAdmission(
