@@ -16,7 +16,7 @@ enum class VerificationStatus {
 /**
  * Immutable Verification Receipt.
  * Primary constructor is private.
- * Minting is restricted to VerificationEngine via VerificationReceipt.mint().
+ * Minting function is internal to kernel-core module (VerificationReceipt.mint).
  */
 class VerificationReceipt private constructor(
     val id: ReceiptId,

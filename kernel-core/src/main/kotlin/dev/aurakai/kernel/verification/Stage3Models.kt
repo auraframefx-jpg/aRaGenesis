@@ -20,7 +20,7 @@ data class EpochNonce private constructor(
     companion object {
         private val consumedNonces = ConcurrentHashMap.newKeySet<String>()
 
-        fun generate(epoch: EpochId = EpochId(1L), timestamp: KernelTimestamp = KernelTimestamp(System.currentTimeMillis())): EpochNonce {
+        internal fun generate(epoch: EpochId = EpochId(1L), timestamp: KernelTimestamp = KernelTimestamp(System.currentTimeMillis())): EpochNonce {
             val digestBytes = MessageDigest.getInstance("SHA-256").digest(
                 "${epoch.value}:${timestamp.epochMillis}:${System.nanoTime()}".toByteArray()
             )

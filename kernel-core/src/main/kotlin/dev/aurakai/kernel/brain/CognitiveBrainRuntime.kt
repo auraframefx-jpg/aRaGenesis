@@ -5,6 +5,7 @@ import dev.aurakai.kernel.verification.*
 import java.security.MessageDigest
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 
 object Cryptography {
     fun computeMerkleRoot(bytes: ByteArray): String {
@@ -182,13 +183,14 @@ interface MetaInstructPolicyGate {
 }
 
 /**
- * Idempotent MetaInstruct Policy Gate.
- * Ensures the same VerificationReceipt cannot be counted repeatedly toward substrate evolution.
+ * Idempotent & Thread-Safe MetaInstruct Policy Gate.
+ * Uses AtomicLong and ConcurrentHashMap to guarantee idempotent, thread-safe verification accounting.
  */
 class DefaultMetaInstructPolicyGate(
-    private var verifiedInsightCount: Long = 0L
+    initialVerifiedInsightCount: Long = 0L
 ) : MetaInstructPolicyGate {
 
+    private val verifiedInsightCount = AtomicLong(initialVerifiedInsightCount)
     private val processedReceiptIds = ConcurrentHashMap.newKeySet<ReceiptId>()
 
     override fun evaluateIngestionPipeline(
@@ -213,23 +215,24 @@ class DefaultMetaInstructPolicyGate(
 
     override fun recordVerifiedReceipt(receipt: VerificationReceipt) {
         if (!receipt.vetoExecuted && receipt.results.values.any { it == VerificationStatus.VERIFIED }) {
-            // Idempotent atomic addition: only increment if receipt ID has NOT been processed before
+            // Atomic set addition + AtomicLong increment
             if (processedReceiptIds.add(receipt.id)) {
-                verifiedInsightCount++
+                verifiedInsightCount.incrementAndGet()
             }
         }
     }
 
-    override fun getVerifiedInsightCount(): Long = verifiedInsightCount
+    override fun getVerifiedInsightCount(): Long = verifiedInsightCount.get()
 
     override fun proposeSubstrateEvolution(): EvolutionProposal {
-        require(verifiedInsightCount >= 100L) {
-            "EVOLUTION REFUSED: Verified insight count ($verifiedInsightCount) is below required threshold (100)."
+        val count = verifiedInsightCount.get()
+        require(count >= 100L) {
+            "EVOLUTION REFUSED: Verified insight count ($count) is below required threshold (100)."
         }
         return EvolutionProposal(
-            id = "evo-prop-${System.currentTimeMillis()}-$verifiedInsightCount",
-            verifiedInsightCount = verifiedInsightCount,
-            proposalStatement = "PROPOSAL: Substrate evolution triggered at $verifiedInsightCount verified insights.",
+            id = "evo-prop-${System.currentTimeMillis()}-$count",
+            verifiedInsightCount = count,
+            proposalStatement = "PROPOSAL: Substrate evolution triggered at $count verified insights.",
             isExecuted = false
         )
     }

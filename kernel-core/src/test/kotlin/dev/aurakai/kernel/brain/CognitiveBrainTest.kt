@@ -27,6 +27,9 @@ class CognitiveBrainTest {
     @BeforeTest
     fun setUp() {
         EpochNonce.clearConsumedForTesting()
+        QuarantineRegistry.resetForTesting()
+        AuthoritativeThermalMonitor.resetForTesting()
+        KernelEpochManager.resetForTesting()
     }
 
     @Test
@@ -37,7 +40,7 @@ class CognitiveBrainTest {
         val obs = solveEngine.solve("Thermal test obs", "sensor-thermal")
         val h = Hypothesis(id = HypothesisId("hyp-thermal"), statement = "Normal status", supportingAshIds = listOf(obs.id))
         val receipt = verificationEngine.verify(listOf(h), listOf(obs))
-        val proposal = triggerRouter.generateProposal("ACTION_EXECUTE", receipt.payloadDigest, EpochNonce.generate())
+        val proposal = triggerRouter.generateProposal("ACTION_EXECUTE", receipt.payloadDigest, KernelEpochManager.issueAuthoritativeNonce())
 
         assertFailsWith<ConstitutionalViolationException> {
             admissionGate.evaluateAdmission(
@@ -93,7 +96,7 @@ class CognitiveBrainTest {
 
     @Test
     fun `test_proposed_action_never_equals_executed_action`() {
-        val proposal = triggerRouter.generateProposal("PURGE_CACHE", "digest-123", EpochNonce.generate())
+        val proposal = triggerRouter.generateProposal("PURGE_CACHE", "digest-123", KernelEpochManager.issueAuthoritativeNonce())
         assertFalse(proposal.isExecuted, "TriggerProposal must never be constructed as executed.")
 
         val executedProposal = proposal.copy(isExecuted = true)
@@ -113,7 +116,7 @@ class CognitiveBrainTest {
 
     @Test
     fun `test_meta_instruct_cannot_directly_mutate_kernel`() {
-        val policyGate = DefaultMetaInstructPolicyGate(verifiedInsightCount = 50L)
+        val policyGate = DefaultMetaInstructPolicyGate(initialVerifiedInsightCount = 50L)
 
         assertFailsWith<IllegalArgumentException> {
             policyGate.proposeSubstrateEvolution()
@@ -133,7 +136,7 @@ class CognitiveBrainTest {
 
     @Test
     fun `test_evolution_threshold_creates_proposal_not_mutation`() {
-        val policyGate = DefaultMetaInstructPolicyGate(verifiedInsightCount = 100L)
+        val policyGate = DefaultMetaInstructPolicyGate(initialVerifiedInsightCount = 100L)
         val proposal = policyGate.proposeSubstrateEvolution()
 
         assertNotNull(proposal)
@@ -167,7 +170,7 @@ class CognitiveBrainTest {
         val obs = solveEngine.solve("Quarantined signal", "src")
         val h = Hypothesis(id = HypothesisId("hyp-quar"), statement = "Quarantined statement", supportingAshIds = listOf(obs.id))
         val receipt = verificationEngine.verify(listOf(h), listOf(obs))
-        val proposal = triggerRouter.generateProposal("ACTION", receipt.payloadDigest, EpochNonce.generate())
+        val proposal = triggerRouter.generateProposal("ACTION", receipt.payloadDigest, KernelEpochManager.issueAuthoritativeNonce())
 
         assertFailsWith<ConstitutionalViolationException> {
             admissionGate.evaluateAdmission(
@@ -185,7 +188,7 @@ class CognitiveBrainTest {
         val h = Hypothesis(id = HypothesisId("hyp-caller"), statement = "Statement", supportingAshIds = listOf(obs.id))
         val validReceipt = verificationEngine.verify(listOf(h), listOf(obs))
 
-        val forgedProposal = triggerRouter.generateProposal("FORGED_ACTION", "mismatched-digest-666", EpochNonce.generate())
+        val forgedProposal = triggerRouter.generateProposal("FORGED_ACTION", "mismatched-digest-666", KernelEpochManager.issueAuthoritativeNonce())
 
         assertFailsWith<ConstitutionalViolationException> {
             admissionGate.evaluateAdmission(
