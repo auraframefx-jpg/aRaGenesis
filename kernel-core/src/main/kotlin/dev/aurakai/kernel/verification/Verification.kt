@@ -14,9 +14,21 @@ enum class VerificationStatus {
 }
 
 /**
+ * Kernel-owned Verification Token.
+ * Constructor is private. Can ONLY be issued by VerificationEngine.verify() to authorize receipt minting.
+ */
+class VerificationReceiptToken private constructor() {
+    companion object {
+        internal fun issue(engine: VerificationEngine): VerificationReceiptToken {
+            return VerificationReceiptToken()
+        }
+    }
+}
+
+/**
  * Immutable Verification Receipt.
  * Primary constructor is private.
- * Minting function is internal to kernel-core module (VerificationReceipt.mint).
+ * Minting function is internal to kernel-core module (VerificationReceipt.mint) requiring an authoritative VerificationReceiptToken.
  */
 class VerificationReceipt private constructor(
     val id: ReceiptId,
@@ -61,27 +73,8 @@ class VerificationReceipt private constructor(
     }
 
     companion object {
-        private fun mintReceipt(
-            id: ReceiptId,
-            timestamp: KernelTimestamp,
-            evaluatedHypothesisIds: List<HypothesisId>,
-            results: Map<HypothesisId, VerificationStatus>,
-            vetoExecuted: Boolean,
-            vetoReason: String?,
-            inputDigest: String,
-            payloadDigest: String
-        ): VerificationReceipt = VerificationReceipt(
-            id = id,
-            timestamp = timestamp,
-            evaluatedHypothesisIds = evaluatedHypothesisIds,
-            results = results,
-            vetoExecuted = vetoExecuted,
-            vetoReason = vetoReason,
-            inputDigest = inputDigest,
-            payloadDigest = payloadDigest
-        )
-
         internal fun mint(
+            token: VerificationReceiptToken,
             id: ReceiptId,
             timestamp: KernelTimestamp,
             evaluatedHypothesisIds: List<HypothesisId>,
@@ -90,7 +83,18 @@ class VerificationReceipt private constructor(
             vetoReason: String?,
             inputDigest: String,
             payloadDigest: String
-        ): VerificationReceipt = mintReceipt(id, timestamp, evaluatedHypothesisIds, results, vetoExecuted, vetoReason, inputDigest, payloadDigest)
+        ): VerificationReceipt {
+            return VerificationReceipt(
+                id = id,
+                timestamp = timestamp,
+                evaluatedHypothesisIds = evaluatedHypothesisIds,
+                results = results,
+                vetoExecuted = vetoExecuted,
+                vetoReason = vetoReason,
+                inputDigest = inputDigest,
+                payloadDigest = payloadDigest
+            )
+        }
     }
 }
 
@@ -161,7 +165,11 @@ class VerificationEngine {
         val payloadDigest = Canonicalizer.computeDigest(snapshotHypotheses, snapshotObservations).value
         val receiptId = ReceiptId("rcpt-${timestamp.epochMillis}-$payloadDigest")
 
+        // Issue kernel token strictly within VerificationEngine.verify()
+        val token = VerificationReceiptToken.issue(this)
+
         return VerificationReceipt.mint(
+            token = token,
             id = receiptId,
             timestamp = timestamp,
             evaluatedHypothesisIds = snapshotHypotheses.map { it.id }.toList(),

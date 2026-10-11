@@ -27,7 +27,6 @@ data class ThermalTelemetry(
 ) {
     companion object {
         fun evaluate(temperature: Double, activeThreads: Int): ThermalTelemetry {
-            // Require temperature to be finite (reject NaN, +Infinity, -Infinity immediately to SOVEREIGN_STATE_FREEZE)
             val state = when {
                 !temperature.isFinite() || temperature >= 42.0 -> ThermalState.SOVEREIGN_STATE_FREEZE
                 temperature >= 39.0 -> ThermalState.THROTTLED_MEDITATION
@@ -46,13 +45,13 @@ object AuthoritativeThermalMonitor {
     @Volatile
     private var currentTelemetry: ThermalTelemetry = ThermalTelemetry.evaluate(35.0, 1)
 
-    fun updateTelemetry(temperature: Double, activeThreads: Int) {
+    internal fun updateTelemetry(temperature: Double, activeThreads: Int) {
         currentTelemetry = ThermalTelemetry.evaluate(temperature, activeThreads)
     }
 
     fun getAuthoritativeTelemetry(): ThermalTelemetry = currentTelemetry
 
-    fun resetForTesting() {
+    internal fun resetForTesting() {
         currentTelemetry = ThermalTelemetry.evaluate(35.0, 1)
     }
 }
@@ -70,39 +69,38 @@ object QuarantineRegistry {
 
     fun isQuarantined(payloadDigest: String): Boolean = quarantinedDigests.contains(payloadDigest)
 
-    fun releaseQuarantine(payloadDigest: String) {
+    internal fun releaseQuarantine(payloadDigest: String) {
         quarantinedDigests.remove(payloadDigest)
     }
 
-    fun resetForTesting() {
+    internal fun resetForTesting() {
         quarantinedDigests.clear()
     }
 }
 
 /**
  * Kernel-Owned Epoch Authority Manager.
- * Issues and validates kernel-authenticated nonces bound to the active kernel epoch.
+ * Uses AtomicLong for thread-safe atomic epoch advancement and issue/validation of epoch nonces.
  */
 object KernelEpochManager {
-    @Volatile
-    private var activeEpoch: EpochId = EpochId(1L)
+    private val activeEpochValue = AtomicLong(1L)
 
-    fun getActiveEpoch(): EpochId = activeEpoch
+    fun getActiveEpoch(): EpochId = EpochId(activeEpochValue.get())
 
-    fun advanceEpoch() {
-        activeEpoch = EpochId(activeEpoch.value + 1L)
+    fun advanceEpoch(): EpochId {
+        return EpochId(activeEpochValue.incrementAndGet())
     }
 
     fun issueAuthoritativeNonce(): EpochNonce {
-        return EpochNonce.generate(epoch = activeEpoch)
+        return EpochNonce.generate(epoch = EpochId(activeEpochValue.get()))
     }
 
     fun isNonceFromActiveEpoch(nonce: EpochNonce): Boolean {
-        return nonce.epoch == activeEpoch
+        return nonce.epoch.value == activeEpochValue.get()
     }
 
-    fun resetForTesting() {
-        activeEpoch = EpochId(1L)
+    internal fun resetForTesting() {
+        activeEpochValue.set(1L)
     }
 }
 
@@ -344,7 +342,7 @@ data class ExplanatoryTrace(
  * 1. Authoritative Thermal Monitor (Caller temperature telemetry ignored unless breaching freeze)
  * 2. Authoritative Quarantine Registry (Caller quarantine booleans ignored unless registering quarantine)
  * 3. Kernel Epoch Manager & Atomic Single-Use Nonce Consumption
- * 4. Snapshot Binding Verification
+ * 4. MANDATORY Snapshot Binding & VERIFIED Receipt Status Verification
  * 5. Character Tensor Orthogonality (Character Score != Execution Authority)
  */
 class ExecutionAdmissionGate {
@@ -376,20 +374,35 @@ class ExecutionAdmissionGate {
             )
         }
 
-        // Validate Receipt Digest Binding
+        // Validate Receipt Veto State & Payload Digest Matching
         if (receipt.vetoExecuted || receipt.payloadDigest != proposal.payloadDigest) {
             throw ConstitutionalViolationException(
                 "EXECUTION ADMISSION REFUSED [${KernelRefusalReason.InvalidSnapshotBinding.code}]: Receipt mismatch or VETO executed."
             )
         }
 
-        // Validate Snapshot Binding Digest
-        proposal.snapshotBinding?.let { binding ->
-            if (binding.snapshotDigest != proposal.payloadDigest || binding.blueprintDigest != receipt.payloadDigest) {
-                throw ConstitutionalViolationException(
-                    "EXECUTION ADMISSION REFUSED [${KernelRefusalReason.InvalidSnapshotBinding.code}]: Snapshot binding digest mismatch."
-                )
-            }
+        // MANDATORY REQUIREMENT: Receipt MUST contain at least one VERIFIED hypothesis status
+        if (receipt.results.values.none { it == VerificationStatus.VERIFIED }) {
+            throw ConstitutionalViolationException(
+                "EXECUTION ADMISSION REFUSED [${KernelRefusalReason.InvalidSnapshotBinding.code}]: VerificationReceipt does not contain any VERIFIED hypothesis results."
+            )
+        }
+
+        // MANDATORY REQUIREMENT: Snapshot Binding MUST NOT BE NULL
+        val binding = proposal.snapshotBinding
+            ?: throw ConstitutionalViolationException(
+                "EXECUTION ADMISSION REFUSED [${KernelRefusalReason.InvalidSnapshotBinding.code}]: Mandatory SnapshotBinding is missing."
+            )
+
+        // Validate Snapshot Binding Digest Match & Observation/Falsification Completeness
+        if (binding.snapshotDigest != proposal.payloadDigest ||
+            binding.blueprintDigest != receipt.payloadDigest ||
+            binding.falsificationTraceDigest.isBlank() ||
+            binding.observationDigests.isEmpty()
+        ) {
+            throw ConstitutionalViolationException(
+                "EXECUTION ADMISSION REFUSED [${KernelRefusalReason.InvalidSnapshotBinding.code}]: Snapshot binding digest mismatch or un-bound trace/observation fields."
+            )
         }
 
         if (proposal.isExecuted) {

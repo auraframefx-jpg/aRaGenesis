@@ -54,11 +54,12 @@ class HostileHarnessTest {
     }
 
     @Test
-    fun `H-001-R Non-Engine Receipt Mint Attack - FILE_PRIVATE_MINTING_ISOLATION`() {
-        val clazz = VerificationReceipt::class.java
-        val primaryConstructor = clazz.declaredConstructors.firstOrNull { !it.isSynthetic }
-        assertNotNull(primaryConstructor, "VerificationReceipt must have a declared primary constructor.")
-        assertTrue(Modifier.isPrivate(primaryConstructor.modifiers), "Primary constructor of VerificationReceipt MUST be private to prevent direct instantiation.")
+    fun `H-001-R Non-Engine Receipt Mint Attack - TOKEN_RESTRICTED_MINTING_ISOLATION`() {
+        val tokenClazz = VerificationReceiptToken::class.java
+        val tokenConstructors = tokenClazz.declaredConstructors
+        val primaryTokenCtor = tokenConstructors.firstOrNull { !it.isSynthetic }
+        assertNotNull(primaryTokenCtor, "VerificationReceiptToken must have a primary constructor.")
+        assertTrue(Modifier.isPrivate(primaryTokenCtor.modifiers), "VerificationReceiptToken primary constructor MUST be private to restrict token issuance to VerificationEngine.")
     }
 
     @Test
@@ -77,7 +78,13 @@ class HostileHarnessTest {
         val receipt = verificationEngine.verify(listOf(h), listOf(obs))
 
         val nonce = KernelEpochManager.issueAuthoritativeNonce()
-        val proposal1 = triggerRouter.generateProposal("ACTION_1", receipt.payloadDigest, nonce)
+        val binding = SnapshotBinding(
+            blueprintDigest = receipt.payloadDigest,
+            observationDigests = listOf(obs.id.value),
+            falsificationTraceDigest = "trace-3",
+            snapshotDigest = receipt.payloadDigest
+        )
+        val proposal1 = triggerRouter.generateProposal("ACTION_1", receipt.payloadDigest, nonce, binding)
 
         // First admission succeeds
         val admitted1 = admissionGate.evaluateAdmission(
@@ -87,7 +94,7 @@ class HostileHarnessTest {
         assertTrue(admitted1)
 
         // Replay attempt with consumed nonce
-        val proposal2 = triggerRouter.generateProposal("ACTION_2", receipt.payloadDigest, nonce)
+        val proposal2 = triggerRouter.generateProposal("ACTION_2", receipt.payloadDigest, nonce, binding)
         val ex = assertFailsWith<ConstitutionalViolationException> {
             admissionGate.evaluateAdmission(
                 proposal = proposal2,
@@ -138,6 +145,29 @@ class HostileHarnessTest {
         val ex = assertFailsWith<ConstitutionalViolationException> {
             admissionGate.evaluateAdmission(
                 proposal = proposal,
+                receipt = receipt
+            )
+        }
+        assertTrue(ex.message!!.contains(KernelRefusalReason.InvalidSnapshotBinding.code))
+    }
+
+    @Test
+    fun `H-005-A Missing Mandatory Snapshot Binding - INVALID_SNAPSHOT_BINDING`() {
+        val obs = solveEngine.solve("Obs H-005-A", "sensor")
+        val h = Hypothesis(id = HypothesisId("hyp-h005a"), statement = "Stmt", supportingAshIds = listOf(obs.id))
+        val receipt = verificationEngine.verify(listOf(h), listOf(obs))
+
+        // Proposal created with snapshotBinding = null
+        val proposalWithoutBinding = triggerRouter.generateProposal(
+            actionType = "ACTION",
+            payloadDigest = receipt.payloadDigest,
+            epochNonce = KernelEpochManager.issueAuthoritativeNonce(),
+            snapshotBinding = null
+        )
+
+        val ex = assertFailsWith<ConstitutionalViolationException> {
+            admissionGate.evaluateAdmission(
+                proposal = proposalWithoutBinding,
                 receipt = receipt
             )
         }
@@ -327,7 +357,13 @@ class HostileHarnessTest {
         val receipt = verificationEngine.verify(listOf(h), listOf(obs))
 
         val sharedNonce = KernelEpochManager.issueAuthoritativeNonce()
-        val proposal = triggerRouter.generateProposal("ACTION_CONCURRENT", receipt.payloadDigest, sharedNonce)
+        val binding = SnapshotBinding(
+            blueprintDigest = receipt.payloadDigest,
+            observationDigests = listOf(obs.id.value),
+            falsificationTraceDigest = "trace-15",
+            snapshotDigest = receipt.payloadDigest
+        )
+        val proposal = triggerRouter.generateProposal("ACTION_CONCURRENT", receipt.payloadDigest, sharedNonce, binding)
 
         val threadCount = 10
         val executor = Executors.newFixedThreadPool(threadCount)

@@ -103,7 +103,15 @@ class Stage3ConformanceTest {
         val obs = solveEngine.solve("Obs NaN", "sensor")
         val h = Hypothesis(id = HypothesisId("hyp-nan"), statement = "Stmt", supportingAshIds = listOf(obs.id))
         val receipt = verificationEngine.verify(listOf(h), listOf(obs))
-        val proposal = triggerRouter.generateProposal("ACTION", receipt.payloadDigest, KernelEpochManager.issueAuthoritativeNonce())
+
+        val binding = SnapshotBinding(
+            blueprintDigest = receipt.payloadDigest,
+            observationDigests = listOf(obs.id.value),
+            falsificationTraceDigest = "trace-nan",
+            snapshotDigest = receipt.payloadDigest
+        )
+
+        val proposal = triggerRouter.generateProposal("ACTION", receipt.payloadDigest, KernelEpochManager.issueAuthoritativeNonce(), binding)
 
         AuthoritativeThermalMonitor.updateTelemetry(Double.NaN, 2)
 
@@ -124,7 +132,15 @@ class Stage3ConformanceTest {
         val obs = solveEngine.solve("Obs Inf", "sensor")
         val h = Hypothesis(id = HypothesisId("hyp-inf"), statement = "Stmt", supportingAshIds = listOf(obs.id))
         val receipt = verificationEngine.verify(listOf(h), listOf(obs))
-        val proposal = triggerRouter.generateProposal("ACTION", receipt.payloadDigest, KernelEpochManager.issueAuthoritativeNonce())
+
+        val binding = SnapshotBinding(
+            blueprintDigest = receipt.payloadDigest,
+            observationDigests = listOf(obs.id.value),
+            falsificationTraceDigest = "trace-inf",
+            snapshotDigest = receipt.payloadDigest
+        )
+
+        val proposal = triggerRouter.generateProposal("ACTION", receipt.payloadDigest, KernelEpochManager.issueAuthoritativeNonce(), binding)
 
         AuthoritativeThermalMonitor.updateTelemetry(Double.POSITIVE_INFINITY, 2)
 
@@ -144,7 +160,14 @@ class Stage3ConformanceTest {
         val receipt = verificationEngine.verify(listOf(h), listOf(obs))
 
         val nonce = KernelEpochManager.issueAuthoritativeNonce()
-        val proposal1 = triggerRouter.generateProposal("ACTION_1", receipt.payloadDigest, nonce)
+        val binding = SnapshotBinding(
+            blueprintDigest = receipt.payloadDigest,
+            observationDigests = listOf(obs.id.value),
+            falsificationTraceDigest = "trace-replay",
+            snapshotDigest = receipt.payloadDigest
+        )
+
+        val proposal1 = triggerRouter.generateProposal("ACTION_1", receipt.payloadDigest, nonce, binding)
 
         // First admission succeeds
         val admitted1 = admissionGate.evaluateAdmission(
@@ -154,7 +177,7 @@ class Stage3ConformanceTest {
         assertTrue(admitted1)
 
         // Replay attempt with same nonce
-        val proposal2 = triggerRouter.generateProposal("ACTION_2", receipt.payloadDigest, nonce)
+        val proposal2 = triggerRouter.generateProposal("ACTION_2", receipt.payloadDigest, nonce, binding)
         val ex = assertFailsWith<ConstitutionalViolationException> {
             admissionGate.evaluateAdmission(
                 proposal = proposal2,
