@@ -47,6 +47,18 @@ This document serves as the persistent checkpoint ledger across agent swarms (Ar
   - `docs/research/HISTORICAL_GEM_ROSTER.md` — Complete archive of historical Gem system instructions (Eve, SpriteGen, Emmi, Genesis, Aura, Kai) with strict Level 4 Reference / Zero Kernel Authority classification.
 - **Epistemic Invariant:** Clean-slate boundary between historical reference corpus and constitutional kernel implementation preserved.
 
+### [CHECKPOINT-003] — Phase 2 Crucible Remediation Complete
+- **Date:** November 5, 2026
+- **Status:** **COMPLETE & VERIFIED**
+- **Artifacts Implemented:**
+  - `kernel-core/src/main/kotlin/dev/aurakai/kernel/verification/AshLedger.kt` — Pure in-memory append-only observation, quarantine scar, and epistemic degradation ledger (GAP-04 / H-008). Zero external I/O or network dependencies.
+  - `kernel-core/src/main/kotlin/dev/aurakai/kernel/verification/AtomicReceiptLedger.kt` — Authoritative thread-safe atomic CAS receipt & nonce consumption ledger (GAP-02 / H-003, H-004). Guarantees single-use execution semantics.
+  - `kernel-core/src/main/kotlin/dev/aurakai/kernel/brain/CognitiveBrainRuntime.kt` — Upgraded `ExecutionAdmissionGate` with `authorize(...)` emitting `AdmissionDecision` sealed hierarchy and `AuthorizedActionToken` (GAP-01 / TOCTOU fix). Re-admission with reused receipt is rejected.
+  - `kernel-core/src/test/kotlin/dev/aurakai/kernel/verification/CrucibleRemediationTest.kt` — Dedicated test suite verifying mutation rejection, quarantine scar tracking, 16-thread/64-attempt concurrency contention, and receipt reuse prevention.
+- **Test Suite Results:**
+  - Command: `./gradlew.bat :kernel-core:test --no-daemon`
+  - Result: **69 / 69 PASS across 9 test suites** (0 failures, 0 errors).
+
 ---
 
 ## 3. PR #6 Crucible Audit Findings (The 7 Gaps)

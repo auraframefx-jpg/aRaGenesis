@@ -36,6 +36,7 @@ data class EpochNonce private constructor(
 
         fun clearConsumedForTesting() {
             consumedNonces.clear()
+            AtomicReceiptLedger.resetForTesting()
         }
     }
 }

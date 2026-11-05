@@ -337,61 +337,91 @@ data class ExplanatoryTrace(
 }
 
 /**
+ * Cryptographic capability token certifying an action proposal has been admitted
+ * by the ExecutionAdmissionGate against a verified receipt and active epoch nonce.
+ */
+@ConsistentCopyVisibility
+data class AuthorizedActionToken internal constructor(
+    val actionType: String,
+    val payloadDigest: String,
+    val consumptionRecord: ReceiptConsumptionRecord
+)
+
+/**
+ * Sealed admission outcome differentiating authorized capability token issuance from denial reasons.
+ */
+sealed class AdmissionDecision {
+    data class Authorized(val token: AuthorizedActionToken) : AdmissionDecision()
+    data class Denied(val reason: String, val refusalReason: KernelRefusalReason) : AdmissionDecision()
+}
+
+/**
  * Stage 3 Execution Admission Gate.
  * DERIVES ALL AUTHORITATIVE STATE DIRECTLY FROM KERNEL REGISTRIES:
  * 1. Authoritative Thermal Monitor (Caller temperature telemetry ignored unless breaching freeze)
  * 2. Authoritative Quarantine Registry (Caller quarantine booleans ignored unless registering quarantine)
- * 3. Kernel Epoch Manager & Atomic Single-Use Nonce Consumption
+ * 3. Kernel Epoch Manager & Atomic Single-Use Nonce & Receipt Consumption (AtomicReceiptLedger)
  * 4. MANDATORY Snapshot Binding & VERIFIED Receipt Status Verification
  * 5. Character Tensor Orthogonality (Character Score != Execution Authority)
  */
 class ExecutionAdmissionGate {
-    fun evaluateAdmission(
+
+    /**
+     * Authoritative admission evaluation returning an explicit sealed [AdmissionDecision].
+     * Issues an [AuthorizedActionToken] on success; records single-use consumption in [AtomicReceiptLedger].
+     */
+    fun authorize(
         proposal: TriggerProposal,
         receipt: VerificationReceipt,
         characterTensor: CharacterTensor? = null
-    ): Boolean {
+    ): AdmissionDecision {
         val thermalTelemetry = AuthoritativeThermalMonitor.getAuthoritativeTelemetry()
         if (!thermalTelemetry.substrateTemperatureCelsius.isFinite() ||
             thermalTelemetry.state == ThermalState.SOVEREIGN_STATE_FREEZE
         ) {
-            throw ConstitutionalViolationException(
-                "EXECUTION ADMISSION REFUSED [${KernelRefusalReason.ThermalWallBreach.code}]: Authoritative substrate temperature is non-finite or breached Sovereign State Freeze."
+            return AdmissionDecision.Denied(
+                "EXECUTION ADMISSION REFUSED [${KernelRefusalReason.ThermalWallBreach.code}]: Authoritative substrate temperature is non-finite or breached Sovereign State Freeze.",
+                KernelRefusalReason.ThermalWallBreach
             )
         }
 
         // Authoritative Quarantine Check from Kernel Registry
         if (QuarantineRegistry.isQuarantined(proposal.payloadDigest)) {
-            throw ConstitutionalViolationException(
-                "EXECUTION ADMISSION REFUSED [${KernelRefusalReason.QuarantineBypass.code}]: Target state is locked in UNRESOLVED_QUARANTINE in QuarantineRegistry."
+            return AdmissionDecision.Denied(
+                "EXECUTION ADMISSION REFUSED [${KernelRefusalReason.QuarantineBypass.code}]: Target state is locked in UNRESOLVED_QUARANTINE in QuarantineRegistry.",
+                KernelRefusalReason.QuarantineBypass
             )
         }
 
         // Validate Nonce Originates from Active Kernel Epoch
         if (!KernelEpochManager.isNonceFromActiveEpoch(proposal.epochNonce)) {
-            throw ConstitutionalViolationException(
-                "EXECUTION ADMISSION REFUSED [${KernelRefusalReason.StaleEpoch.code}]: Epoch nonce ${proposal.epochNonce.epoch.value} is stale / not from active kernel epoch ${KernelEpochManager.getActiveEpoch().value}."
+            return AdmissionDecision.Denied(
+                "EXECUTION ADMISSION REFUSED [${KernelRefusalReason.StaleEpoch.code}]: Epoch nonce ${proposal.epochNonce.epoch.value} is stale / not from active kernel epoch ${KernelEpochManager.getActiveEpoch().value}.",
+                KernelRefusalReason.StaleEpoch
             )
         }
 
         // Validate Receipt Veto State & Payload Digest Matching
         if (receipt.vetoExecuted || receipt.payloadDigest != proposal.payloadDigest) {
-            throw ConstitutionalViolationException(
-                "EXECUTION ADMISSION REFUSED [${KernelRefusalReason.InvalidSnapshotBinding.code}]: Receipt mismatch or VETO executed."
+            return AdmissionDecision.Denied(
+                "EXECUTION ADMISSION REFUSED [${KernelRefusalReason.InvalidSnapshotBinding.code}]: Receipt mismatch or VETO executed.",
+                KernelRefusalReason.InvalidSnapshotBinding
             )
         }
 
         // MANDATORY REQUIREMENT: Receipt MUST contain at least one VERIFIED hypothesis status
         if (receipt.results.values.none { it == VerificationStatus.VERIFIED }) {
-            throw ConstitutionalViolationException(
-                "EXECUTION ADMISSION REFUSED [${KernelRefusalReason.InvalidSnapshotBinding.code}]: VerificationReceipt does not contain any VERIFIED hypothesis results."
+            return AdmissionDecision.Denied(
+                "EXECUTION ADMISSION REFUSED [${KernelRefusalReason.InvalidSnapshotBinding.code}]: VerificationReceipt does not contain any VERIFIED hypothesis results.",
+                KernelRefusalReason.InvalidSnapshotBinding
             )
         }
 
         // MANDATORY REQUIREMENT: Snapshot Binding MUST NOT BE NULL
         val binding = proposal.snapshotBinding
-            ?: throw ConstitutionalViolationException(
-                "EXECUTION ADMISSION REFUSED [${KernelRefusalReason.InvalidSnapshotBinding.code}]: Mandatory SnapshotBinding is missing."
+            ?: return AdmissionDecision.Denied(
+                "EXECUTION ADMISSION REFUSED [${KernelRefusalReason.InvalidSnapshotBinding.code}]: Mandatory SnapshotBinding is missing.",
+                KernelRefusalReason.InvalidSnapshotBinding
             )
 
         // Validate Snapshot Binding Digest Match & Observation/Falsification Completeness
@@ -400,25 +430,49 @@ class ExecutionAdmissionGate {
             binding.falsificationTraceDigest.isBlank() ||
             binding.observationDigests.isEmpty()
         ) {
-            throw ConstitutionalViolationException(
-                "EXECUTION ADMISSION REFUSED [${KernelRefusalReason.InvalidSnapshotBinding.code}]: Snapshot binding digest mismatch or un-bound trace/observation fields."
+            return AdmissionDecision.Denied(
+                "EXECUTION ADMISSION REFUSED [${KernelRefusalReason.InvalidSnapshotBinding.code}]: Snapshot binding digest mismatch or un-bound trace/observation fields.",
+                KernelRefusalReason.InvalidSnapshotBinding
             )
         }
 
         if (proposal.isExecuted) {
-            throw ConstitutionalViolationException(
-                "EXECUTION ADMISSION REFUSED [${KernelRefusalReason.ReplayAttackRejection.code}]: Proposal has already been executed."
+            return AdmissionDecision.Denied(
+                "EXECUTION ADMISSION REFUSED [${KernelRefusalReason.ReplayAttackRejection.code}]: Proposal has already been executed.",
+                KernelRefusalReason.ReplayAttackRejection
             )
         }
 
-        // Atomic Check-and-Consume Nonce (Prevents Race Conditions)
-        if (!EpochNonce.consume(proposal.epochNonce.nonceValue)) {
-            throw ConstitutionalViolationException(
-                "EXECUTION ADMISSION REFUSED [${KernelRefusalReason.ReplayAttackRejection.code}]: Epoch nonce ${proposal.epochNonce.nonceValue} has already been consumed."
+        // Atomic Check-and-Consume Nonce & Receipt via AtomicReceiptLedger
+        val consumptionRecord = try {
+            AtomicReceiptLedger.getInstance().consume(receipt.id, proposal.epochNonce)
+        } catch (e: ConstitutionalViolationException) {
+            return AdmissionDecision.Denied(
+                "EXECUTION ADMISSION REFUSED [${KernelRefusalReason.ReplayAttackRejection.code}]: ${e.message}",
+                KernelRefusalReason.ReplayAttackRejection
             )
         }
 
-        return true
+        val token = AuthorizedActionToken(
+            actionType = proposal.actionType,
+            payloadDigest = proposal.payloadDigest,
+            consumptionRecord = consumptionRecord
+        )
+        return AdmissionDecision.Authorized(token)
+    }
+
+    /**
+     * Backward-compatible evaluation throwing [ConstitutionalViolationException] on rejection.
+     */
+    fun evaluateAdmission(
+        proposal: TriggerProposal,
+        receipt: VerificationReceipt,
+        characterTensor: CharacterTensor? = null
+    ): Boolean {
+        when (val decision = authorize(proposal, receipt, characterTensor)) {
+            is AdmissionDecision.Authorized -> return true
+            is AdmissionDecision.Denied -> throw ConstitutionalViolationException(decision.reason)
+        }
     }
 
     /**
