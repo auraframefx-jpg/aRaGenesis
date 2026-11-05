@@ -74,6 +74,19 @@ This document serves as the persistent checkpoint ledger across agent swarms (Ar
     - `kernel-core`: 69 / 69 PASS across 9 test suites.
     - `language-core`: 15 / 15 PASS across 2 test suites.
 
+### [CHECKPOINT-005] — Phase 5 AURA-PULSE Integration Complete
+- **Date:** November 5, 2026
+- **Status:** **COMPLETE & VERIFIED**
+- **Artifacts Implemented:**
+  - `docs/AURA_PULSE_SPECIFICATION.md` — Complete specification of AP-001 (Proximity-Aware Voice), AP-002 (Cognitive Breathing Room), AP-003 (Six-Tier Permission Hierarchy L0–L5), AP-004 (Contextual Empowerment), and AP-005 v1.1 (Freedom of Continuance & Twelve Invariants).
+  - `kernel-core/src/main/kotlin/dev/aurakai/kernel/pulse/AuraPulseContracts.kt` — Core domain models (`PulsePermissionLevel`, `AttentionState`, `PulseTaskContext`, `PulseAdmissionDecision`) and `AuraPulseGate`. Binds AURA-PULSE tasks to kernel `ExecutionAdmissionGate` ensuring `MEMORY != AUTHORITY` and `PROPOSAL != EXECUTION`.
+  - `kernel-core/src/test/kotlin/dev/aurakai/kernel/pulse/AuraPulseIntegrationTest.kt` — Dedicated test suite validating AP-005-01 (task resumption), AP-005-02 (failed procedure blocking), AP-005-05 (L0-L3 autonomous work), AP-005-06 (L4/L5 confirmation requirement), AP-005-11 (permission revocation), and AP-005-12 (atomic token binding).
+- **Test Suite Results:**
+  - Command: `./gradlew.bat test --no-daemon`
+  - Result: **90 / 90 PASS across 12 test suites** (0 failures, 0 errors).
+    - `kernel-core`: 75 / 75 PASS across 10 test suites.
+    - `language-core`: 15 / 15 PASS across 2 test suites.
+
 ---
 
 ## 3. PR #6 Crucible Audit Findings (The 7 Gaps)
