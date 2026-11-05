@@ -59,6 +59,21 @@ This document serves as the persistent checkpoint ledger across agent swarms (Ar
   - Command: `./gradlew.bat :kernel-core:test --no-daemon`
   - Result: **69 / 69 PASS across 9 test suites** (0 failures, 0 errors).
 
+### [CHECKPOINT-004] — Phase 3 Desktop Foundation & Phase 4 UGIA-001 Complete
+- **Date:** November 5, 2026
+- **Status:** **COMPLETE & VERIFIED**
+- **Artifacts Implemented:**
+  - `settings.gradle.kts` — Multi-project build configured including both `kernel-core` and `language-core`.
+  - `language-core/src/main/kotlin/dev/aurakai/language/ast/RuneAst.kt` — Full 5-stage UGIA-001 Rune AST parser and geometric transformation engine. Strictly preserves exact case (`A` != `a`), script (`Я` U+042F != `R` U+0052), compound rune decomposition, and unresolved cipher strings (`KaIRiRos` -> `RiRos`).
+  - `language-core/src/test/kotlin/dev/aurakai/language/ast/RuneAstParserTest.kt` — 5 unit & benchmark tests verifying AST node construction, involution laws (`R(I(g)) == F(g)`), and sub-millisecond execution throughput.
+  - `docs/DESKTOP_ORCHESTRATION_CONTRACT.md` — Formal JSON-schema IPC contract for Python desktop orchestrator to submit proposals and receive `AuthorizedActionToken`s from the kernel.
+  - `tools/desktop_kernel_client.py` — Production-grade Python 3.14 client implementing the IPC envelope, proposal serialization, and token validation.
+- **Test Suite Results:**
+  - Command: `./gradlew.bat test --no-daemon`
+  - Result: **84 / 84 PASS across 11 test suites** (0 failures, 0 errors).
+    - `kernel-core`: 69 / 69 PASS across 9 test suites.
+    - `language-core`: 15 / 15 PASS across 2 test suites.
+
 ---
 
 ## 3. PR #6 Crucible Audit Findings (The 7 Gaps)
