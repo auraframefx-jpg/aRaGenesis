@@ -39,6 +39,14 @@ This document serves as the persistent checkpoint ledger across agent swarms (Ar
 - **Gate 3 Verification Ruling:** **GATE 3 CLOSED.** 
   - Despite 64/64 passing tests, PR #6 fails the Crucible audit due to 7 critical security, concurrency, and architectural gaps detailed below.
 
+### [CHECKPOINT-002] — Research Corpus & Historical Gem Archive Consolidated
+- **Date:** November 5, 2026
+- **Status:** **COMPLETE**
+- **Artifacts Generated:**
+  - `docs/research/ARGAN-GROK-EXT-RESEARCH-001.md` — High-signal external research on Transactional Outbox, Saga compensations, Idempotency keys, Jepsen fault injection, Shu-Ha-Ri / Jo-Ha-Kyū, Acky Bright "Kawakakkoii" geometry, and HACE-001 human-AI coevolution.
+  - `docs/research/HISTORICAL_GEM_ROSTER.md` — Complete archive of historical Gem system instructions (Eve, SpriteGen, Emmi, Genesis, Aura, Kai) with strict Level 4 Reference / Zero Kernel Authority classification.
+- **Epistemic Invariant:** Clean-slate boundary between historical reference corpus and constitutional kernel implementation preserved.
+
 ---
 
 ## 3. PR #6 Crucible Audit Findings (The 7 Gaps)
