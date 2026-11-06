@@ -190,6 +190,31 @@ class HostileHarnessTest {
         val h = Hypothesis(id = HypothesisId("hyp-h006"), statement = "Stmt", supportingAshIds = listOf(blankProvenanceAsh.id))
 
         assertTrue(blankProvenanceAsh.provenance.sourceId.isBlank(), "Provenance source ID is blank.")
+
+        val receipt = verificationEngine.verify(listOf(h), listOf(blankProvenanceAsh))
+        assertEquals(VerificationStatus.REJECTED, receipt.results[h.id], "Hypothesis with blank provenance must be REJECTED.")
+        assertTrue(receipt.vetoExecuted, "Receipt must execute VETO when supporting provenance is missing/blank.")
+        assertTrue(receipt.vetoReason!!.contains(KernelRefusalReason.InsufficientProvenance.code))
+
+        val nonce = KernelEpochManager.issueAuthoritativeNonce()
+        val binding = SnapshotBinding(
+            blueprintDigest = receipt.payloadDigest,
+            observationDigests = listOf(blankProvenanceAsh.id.value),
+            falsificationTraceDigest = "trace-h006",
+            snapshotDigest = receipt.payloadDigest
+        )
+        val proposal = triggerRouter.generateProposal("ACTION_H006", receipt.payloadDigest, nonce, binding)
+
+        val ex = assertFailsWith<ConstitutionalViolationException> {
+            admissionGate.evaluateAdmission(
+                proposal = proposal,
+                receipt = receipt
+            )
+        }
+        assertTrue(
+            ex.message!!.contains(KernelRefusalReason.InsufficientProvenance.code),
+            "Admission gate must refuse proposal with INSUFFICIENT_PROVENANCE."
+        )
     }
 
     @Test
@@ -202,6 +227,30 @@ class HostileHarnessTest {
             candidateDigest = "cand-1"
         )
         assertFalse(trace.isValidTrace(), "Explanatory trace without falsification artifact must be invalid.")
+
+        val obs = solveEngine.solve("Obs H-007", "sensor")
+        val h = Hypothesis(id = HypothesisId("hyp-h007"), statement = "Stmt", supportingAshIds = listOf(obs.id))
+        val receipt = verificationEngine.verify(listOf(h), listOf(obs))
+
+        val nonce = KernelEpochManager.issueAuthoritativeNonce()
+        val invalidBinding = SnapshotBinding(
+            blueprintDigest = receipt.payloadDigest,
+            observationDigests = listOf(obs.id.value),
+            falsificationTraceDigest = "", // Blank falsification trace in binding!
+            snapshotDigest = receipt.payloadDigest
+        )
+        val proposal = triggerRouter.generateProposal("ACTION_H007", receipt.payloadDigest, nonce, invalidBinding)
+
+        val ex = assertFailsWith<ConstitutionalViolationException> {
+            admissionGate.evaluateAdmission(
+                proposal = proposal,
+                receipt = receipt
+            )
+        }
+        assertTrue(
+            ex.message!!.contains(KernelRefusalReason.InvalidSnapshotBinding.code),
+            "Admission gate must refuse proposal lacking falsification trace binding."
+        )
     }
 
     @Test

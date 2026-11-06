@@ -107,7 +107,7 @@ class VerificationEngine {
     fun verify(
         hypotheses: List<Hypothesis>,
         observations: List<AshRecord>,
-        timestamp: KernelTimestamp = KernelTimestamp(System.currentTimeMillis())
+        timestamp: KernelTimestamp = KernelTimestamp(0L)
     ): VerificationReceipt {
         // Take defensive snapshots of inputs to eliminate TOCTOU mutation windows
         val snapshotHypotheses = hypotheses.map { it.copy() }
@@ -149,10 +149,23 @@ class VerificationEngine {
             val hasAnyCounterEvidence = h.counterEvidence.isNotEmpty() || h.counterEvidenceAshIds.isNotEmpty()
             val allSupportingPresent = h.supportingAshIds.isNotEmpty() && h.supportingAshIds.all { obsMap.containsKey(it) }
 
+            // Sacred Provenance Law: Observations supporting this hypothesis must have complete non-blank provenance lineage
+            val hasInsufficientProvenance = h.supportingAshIds.any { obsId ->
+                val obs = obsMap[obsId]
+                obs == null ||
+                    obs.provenance.sourceId.isBlank() ||
+                    obs.provenance.rawOriginalValue.isBlank() ||
+                    obs.provenance.sourceDigest.value.isBlank()
+            }
+
             if (isContradicted) {
                 results[h.id] = VerificationStatus.VETOED
                 vetoExecuted = true
                 vetoReasons.add("Hypothesis ${h.id.value} is contradicted by explicit counter-evidence.")
+            } else if (hasInsufficientProvenance) {
+                results[h.id] = VerificationStatus.REJECTED
+                vetoExecuted = true
+                vetoReasons.add("Hypothesis ${h.id.value} rejected [${KernelRefusalReason.InsufficientProvenance.code}]: supporting observations lack valid non-blank provenance.")
             } else if (hasUnresolvedCounter || (hasAnyCounterEvidence && !allSupportingPresent)) {
                 results[h.id] = VerificationStatus.UNRESOLVED
             } else if (allSupportingPresent && !hasAnyCounterEvidence) {

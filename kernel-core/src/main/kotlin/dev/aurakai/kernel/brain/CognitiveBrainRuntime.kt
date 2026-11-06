@@ -403,17 +403,27 @@ class ExecutionAdmissionGate {
 
         // Validate Receipt Veto State & Payload Digest Matching
         if (receipt.vetoExecuted || receipt.payloadDigest != proposal.payloadDigest) {
-            return AdmissionDecision.Denied(
-                "EXECUTION ADMISSION REFUSED [${KernelRefusalReason.InvalidSnapshotBinding.code}]: Receipt mismatch or VETO executed.",
+            val refusalReason = if (receipt.vetoReason?.contains(KernelRefusalReason.InsufficientProvenance.code) == true) {
+                KernelRefusalReason.InsufficientProvenance
+            } else {
                 KernelRefusalReason.InvalidSnapshotBinding
+            }
+            return AdmissionDecision.Denied(
+                "EXECUTION ADMISSION REFUSED [${refusalReason.code}]: Receipt mismatch or VETO executed. Details: ${receipt.vetoReason ?: "digest mismatch"}",
+                refusalReason
             )
         }
 
         // MANDATORY REQUIREMENT: Receipt MUST contain at least one VERIFIED hypothesis status
         if (receipt.results.values.none { it == VerificationStatus.VERIFIED }) {
-            return AdmissionDecision.Denied(
-                "EXECUTION ADMISSION REFUSED [${KernelRefusalReason.InvalidSnapshotBinding.code}]: VerificationReceipt does not contain any VERIFIED hypothesis results.",
+            val refusalReason = if (receipt.vetoReason?.contains(KernelRefusalReason.InsufficientProvenance.code) == true) {
+                KernelRefusalReason.InsufficientProvenance
+            } else {
                 KernelRefusalReason.InvalidSnapshotBinding
+            }
+            return AdmissionDecision.Denied(
+                "EXECUTION ADMISSION REFUSED [${refusalReason.code}]: VerificationReceipt does not contain any VERIFIED hypothesis results.",
+                refusalReason
             )
         }
 
