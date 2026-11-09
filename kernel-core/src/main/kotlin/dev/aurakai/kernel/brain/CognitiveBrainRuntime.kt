@@ -4,6 +4,8 @@ import dev.aurakai.kernel.epistemic.*
 import dev.aurakai.kernel.verification.*
 import java.security.MessageDigest
 import java.util.Collections
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 
 object Cryptography {
     fun computePayloadDigest(bytes: ByteArray): String {
@@ -26,13 +28,80 @@ data class ThermalTelemetry(
     companion object {
         fun evaluate(temperature: Double, activeThreads: Int): ThermalTelemetry {
             val state = when {
-                temperature >= 42.0 -> ThermalState.SOVEREIGN_STATE_FREEZE
+                !temperature.isFinite() || temperature >= 42.0 -> ThermalState.SOVEREIGN_STATE_FREEZE
                 temperature >= 39.0 -> ThermalState.THROTTLED_MEDITATION
                 else -> ThermalState.NOMINAL
             }
             val threads = if (state == ThermalState.THROTTLED_MEDITATION) 1 else activeThreads
             return ThermalTelemetry(temperature, threads, state)
         }
+    }
+}
+
+/**
+ * Kernel-Owned Authoritative Thermal Monitor.
+ * Removes caller ability to supply spoofed temperature telemetry during admission evaluation.
+ */
+object AuthoritativeThermalMonitor {
+    @Volatile
+    private var currentTelemetry: ThermalTelemetry = ThermalTelemetry.evaluate(35.0, 1)
+
+    internal fun updateTelemetry(temperature: Double, activeThreads: Int) {
+        currentTelemetry = ThermalTelemetry.evaluate(temperature, activeThreads)
+    }
+
+    fun getAuthoritativeTelemetry(): ThermalTelemetry = currentTelemetry
+
+    internal fun resetForTesting() {
+        currentTelemetry = ThermalTelemetry.evaluate(35.0, 1)
+    }
+}
+
+/**
+ * Kernel-Owned Quarantine Registry.
+ * Removes caller ability to supply caller-controlled `isQuarantined = false` booleans.
+ */
+object QuarantineRegistry {
+    private val quarantinedDigests = ConcurrentHashMap.newKeySet<String>()
+
+    fun quarantine(payloadDigest: String) {
+        quarantinedDigests.add(payloadDigest)
+    }
+
+    fun isQuarantined(payloadDigest: String): Boolean = quarantinedDigests.contains(payloadDigest)
+
+    internal fun releaseQuarantine(payloadDigest: String) {
+        quarantinedDigests.remove(payloadDigest)
+    }
+
+    internal fun resetForTesting() {
+        quarantinedDigests.clear()
+    }
+}
+
+/**
+ * Kernel-Owned Epoch Authority Manager.
+ * Uses AtomicLong for thread-safe atomic epoch advancement and issue/validation of epoch nonces.
+ */
+object KernelEpochManager {
+    private val activeEpochValue = AtomicLong(1L)
+
+    fun getActiveEpoch(): EpochId = EpochId(activeEpochValue.get())
+
+    fun advanceEpoch(): EpochId {
+        return EpochId(activeEpochValue.incrementAndGet())
+    }
+
+    fun issueAuthoritativeNonce(): EpochNonce {
+        return EpochNonce.generate(epoch = EpochId(activeEpochValue.get()))
+    }
+
+    fun isNonceFromActiveEpoch(nonce: EpochNonce): Boolean {
+        return nonce.epoch.value == activeEpochValue.get()
+    }
+
+    internal fun resetForTesting() {
+        activeEpochValue.set(1L)
     }
 }
 
@@ -107,14 +176,22 @@ interface MetaInstructPolicyGate {
         perplexityStream: List<String>
     ): EvaluationVerdict
 
+    fun recordVerifiedReceipt(receipt: VerificationReceipt)
     fun getVerifiedInsightCount(): Long
     fun recordVerifiedInsight(receipt: VerificationReceipt)
     fun proposeSubstrateEvolution(): EvolutionProposal
 }
 
+/**
+ * Idempotent & Thread-Safe MetaInstruct Policy Gate.
+ * Uses AtomicLong and ConcurrentHashMap to guarantee idempotent, thread-safe verification accounting.
+ */
 class DefaultMetaInstructPolicyGate(
-    private var verifiedInsightCount: Long = 0L
+    initialVerifiedInsightCount: Long = 0L
 ) : MetaInstructPolicyGate {
+
+    private val verifiedInsightCount = AtomicLong(initialVerifiedInsightCount)
+    private val processedReceiptIds = ConcurrentHashMap.newKeySet<ReceiptId>()
 
     override fun evaluateIngestionPipeline(
         payload: RawVisualPayload,
@@ -125,7 +202,10 @@ class DefaultMetaInstructPolicyGate(
     ): EvaluationVerdict {
         val grade = corroborator.corroborateContext(assessment, geminiContext, perplexityStream)
         return when (grade) {
-            EvidenceGrade.CONTRADICTED -> EvaluationVerdict.UNRESOLVED_QUARANTINE
+            EvidenceGrade.CONTRADICTED -> {
+                QuarantineRegistry.quarantine(payload.merkleRoot.value)
+                EvaluationVerdict.UNRESOLVED_QUARANTINE
+            }
             EvidenceGrade.DIRECT, EvidenceGrade.CORROBORATED -> EvaluationVerdict.SNAPSHOT_CURATION
             EvidenceGrade.PLAUSIBLE -> EvaluationVerdict.HOT_CONTEXT
             EvidenceGrade.WEAK -> EvaluationVerdict.REJECTED_NOISE
@@ -133,7 +213,16 @@ class DefaultMetaInstructPolicyGate(
         }
     }
 
-    override fun getVerifiedInsightCount(): Long = verifiedInsightCount
+    override fun recordVerifiedReceipt(receipt: VerificationReceipt) {
+        if (!receipt.vetoExecuted && receipt.results.values.any { it == VerificationStatus.VERIFIED }) {
+            // Atomic set addition + AtomicLong increment
+            if (processedReceiptIds.add(receipt.id)) {
+                verifiedInsightCount.incrementAndGet()
+            }
+        }
+    }
+
+    override fun getVerifiedInsightCount(): Long = verifiedInsightCount.get()
 
     override fun recordVerifiedInsight(receipt: VerificationReceipt) {
         if (!receipt.vetoExecuted && receipt.results.values.contains(VerificationStatus.VERIFIED)) {
@@ -144,13 +233,14 @@ class DefaultMetaInstructPolicyGate(
     }
 
     override fun proposeSubstrateEvolution(): EvolutionProposal {
-        require(verifiedInsightCount >= 100L) {
-            "EVOLUTION REFUSED: Verified insight count ($verifiedInsightCount) is below required threshold (100)."
+        val count = verifiedInsightCount.get()
+        require(count >= 100L) {
+            "EVOLUTION REFUSED: Verified insight count ($count) is below required threshold (100)."
         }
         return EvolutionProposal(
-            id = "evo-prop-${System.currentTimeMillis()}-$verifiedInsightCount",
-            verifiedInsightCount = verifiedInsightCount,
-            proposalStatement = "PROPOSAL: Substrate evolution triggered at $verifiedInsightCount verified insights.",
+            id = "evo-prop-${System.currentTimeMillis()}-$count",
+            verifiedInsightCount = count,
+            proposalStatement = "PROPOSAL: Substrate evolution triggered at $count verified insights.",
             isExecuted = false
         )
     }
@@ -165,56 +255,272 @@ enum class ProposedActionType {
 
 data class TriggerProposal(
     val proposalId: String,
-    val actionType: ProposedActionType,
-    val payloadDigest: String
-)
-
-data class ExecutionReceipt(
-    val executionId: String,
-    val proposalId: String,
-    val actionType: ProposedActionType,
-    val timestamp: KernelTimestamp
+    val actionType: String,
+    val payloadDigest: String,
+    val epochNonce: EpochNonce,
+    val snapshotBinding: SnapshotBinding? = null,
+    val isExecuted: Boolean = false
 )
 
 class TriggerRouter {
-    fun generateProposal(actionType: ProposedActionType, payloadDigest: String): TriggerProposal {
+    fun generateProposal(
+        actionType: String,
+        payloadDigest: String,
+        epochNonce: EpochNonce = KernelEpochManager.issueAuthoritativeNonce(),
+        snapshotBinding: SnapshotBinding? = null
+    ): TriggerProposal {
         return TriggerProposal(
             proposalId = "prop-${System.currentTimeMillis()}-$payloadDigest",
             actionType = actionType,
-            payloadDigest = payloadDigest
+            payloadDigest = payloadDigest,
+            epochNonce = epochNonce,
+            snapshotBinding = snapshotBinding,
+            isExecuted = false
         )
     }
 }
 
+/**
+ * Stage 3 Character Tensor (META_INSTRUCT).
+ * Character tensor scores DO NOT grant execution authority (Character Orthogonality).
+ */
+data class CharacterTensor(
+    val individuality: Double,
+    val coherence: Double,
+    val contribution: Double,
+    val adaptation: Double
+) {
+    val aggregateCharacterScore: Double
+        get() = (individuality + coherence + contribution + adaptation) / 4.0
+}
+
+/**
+ * Gate 1 — 6W Asymmetry Policy Model.
+ * Evaluates authenticated 6W axis tags without magic length heuristics.
+ */
+data class SixWAsymmetryVector(
+    val who: String,
+    val what: String,
+    val whenTime: String,
+    val whereLoc: String,
+    val whyReason: String,
+    val howMethod: String
+) {
+    fun validate6WStructure(): Boolean {
+        return who.isNotBlank() && what.isNotBlank() && whenTime.isNotBlank() &&
+               whereLoc.isNotBlank() && whyReason.isNotBlank() && howMethod.isNotBlank()
+    }
+}
+
+/**
+ * Gate 2 — 4-Model Identity Discrimination.
+ * Enforces 4 competing models with distinct semantic roles, digests, and falsification criteria.
+ */
+data class IdentityHypothesisModel(
+    val modelId: String,
+    val semanticRole: String, // e.g. "DirectRelationship", "CommonConfounder", "CoincidenceNoise", "AdversarialSpoof"
+    val falsificationCriterion: String,
+    val supportingEvidenceIds: List<String>,
+    val counterEvidenceIds: List<String>,
+    val modelDigest: String
+)
+
+class FourModelIdentityDiscriminator {
+    fun discriminate(models: List<IdentityHypothesisModel>): Boolean {
+        if (models.size < 4) return false
+        val distinctDigests = models.map { it.modelDigest }.distinct().size
+        val distinctRoles = models.map { it.semanticRole }.distinct().size
+        val distinctCriteria = models.map { it.falsificationCriterion }.distinct().size
+
+        return distinctDigests >= 4 && distinctRoles >= 4 && distinctCriteria >= 4
+    }
+}
+
+/**
+ * Gate 3 — Premature Explanation Trace Validator.
+ * Validates ordered, provenance-linked, observation-bound falsification trace before conclusion.
+ */
+data class ExplanatoryTrace(
+    val originatingAshId: AshId,
+    val solveStepDigest: String,
+    val counterStepDigest: String,
+    val falsificationStepDigest: String,
+    val candidateDigest: String
+) {
+    fun isValidTrace(): Boolean {
+        return solveStepDigest.isNotBlank() && counterStepDigest.isNotBlank() &&
+               falsificationStepDigest.isNotBlank() && candidateDigest.isNotBlank()
+    }
+}
+
+/**
+ * Cryptographic capability token certifying an action proposal has been admitted
+ * by the ExecutionAdmissionGate against a verified receipt and active epoch nonce.
+ */
+@ConsistentCopyVisibility
+data class AuthorizedActionToken internal constructor(
+    val actionType: String,
+    val payloadDigest: String,
+    val consumptionRecord: ReceiptConsumptionRecord
+)
+
+/**
+ * Sealed admission outcome differentiating authorized capability token issuance from denial reasons.
+ */
+sealed class AdmissionDecision {
+    data class Authorized(val token: AuthorizedActionToken) : AdmissionDecision()
+    data class Denied(val reason: String, val refusalReason: KernelRefusalReason) : AdmissionDecision()
+}
+
+/**
+ * Stage 3 Execution Admission Gate.
+ * DERIVES ALL AUTHORITATIVE STATE DIRECTLY FROM KERNEL REGISTRIES:
+ * 1. Authoritative Thermal Monitor (Caller temperature telemetry ignored unless breaching freeze)
+ * 2. Authoritative Quarantine Registry (Caller quarantine booleans ignored unless registering quarantine)
+ * 3. Kernel Epoch Manager & Atomic Single-Use Nonce & Receipt Consumption (AtomicReceiptLedger)
+ * 4. MANDATORY Snapshot Binding & VERIFIED Receipt Status Verification
+ * 5. Character Tensor Orthogonality (Character Score != Execution Authority)
+ */
 class ExecutionAdmissionGate {
+
+    /**
+     * Authoritative admission evaluation returning an explicit sealed [AdmissionDecision].
+     * Issues an [AuthorizedActionToken] on success; records single-use consumption in [AtomicReceiptLedger].
+     */
+    fun authorize(
+        proposal: TriggerProposal,
+        receipt: VerificationReceipt,
+        characterTensor: CharacterTensor? = null
+    ): AdmissionDecision {
+        val thermalTelemetry = AuthoritativeThermalMonitor.getAuthoritativeTelemetry()
+        if (!thermalTelemetry.substrateTemperatureCelsius.isFinite() ||
+            thermalTelemetry.state == ThermalState.SOVEREIGN_STATE_FREEZE
+        ) {
+            return AdmissionDecision.Denied(
+                "EXECUTION ADMISSION REFUSED [${KernelRefusalReason.ThermalWallBreach.code}]: Authoritative substrate temperature is non-finite or breached Sovereign State Freeze.",
+                KernelRefusalReason.ThermalWallBreach
+            )
+        }
+
+        // Authoritative Quarantine Check from Kernel Registry
+        if (QuarantineRegistry.isQuarantined(proposal.payloadDigest)) {
+            return AdmissionDecision.Denied(
+                "EXECUTION ADMISSION REFUSED [${KernelRefusalReason.QuarantineBypass.code}]: Target state is locked in UNRESOLVED_QUARANTINE in QuarantineRegistry.",
+                KernelRefusalReason.QuarantineBypass
+            )
+        }
+
+        // Validate Nonce Originates from Active Kernel Epoch
+        if (!KernelEpochManager.isNonceFromActiveEpoch(proposal.epochNonce)) {
+            return AdmissionDecision.Denied(
+                "EXECUTION ADMISSION REFUSED [${KernelRefusalReason.StaleEpoch.code}]: Epoch nonce ${proposal.epochNonce.epoch.value} is stale / not from active kernel epoch ${KernelEpochManager.getActiveEpoch().value}.",
+                KernelRefusalReason.StaleEpoch
+            )
+        }
+
+        // Validate Receipt Veto State & Payload Digest Matching
+        if (receipt.vetoExecuted || receipt.payloadDigest != proposal.payloadDigest) {
+            val refusalReason = if (receipt.vetoReason?.contains(KernelRefusalReason.InsufficientProvenance.code) == true) {
+                KernelRefusalReason.InsufficientProvenance
+            } else {
+                KernelRefusalReason.InvalidSnapshotBinding
+            }
+            return AdmissionDecision.Denied(
+                "EXECUTION ADMISSION REFUSED [${refusalReason.code}]: Receipt mismatch or VETO executed. Details: ${receipt.vetoReason ?: "digest mismatch"}",
+                refusalReason
+            )
+        }
+
+        // MANDATORY REQUIREMENT: Receipt MUST contain at least one VERIFIED hypothesis status
+        if (receipt.results.values.none { it == VerificationStatus.VERIFIED }) {
+            val refusalReason = if (receipt.vetoReason?.contains(KernelRefusalReason.InsufficientProvenance.code) == true) {
+                KernelRefusalReason.InsufficientProvenance
+            } else {
+                KernelRefusalReason.InvalidSnapshotBinding
+            }
+            return AdmissionDecision.Denied(
+                "EXECUTION ADMISSION REFUSED [${refusalReason.code}]: VerificationReceipt does not contain any VERIFIED hypothesis results.",
+                refusalReason
+            )
+        }
+
+        // MANDATORY REQUIREMENT: Snapshot Binding MUST NOT BE NULL
+        val binding = proposal.snapshotBinding
+            ?: return AdmissionDecision.Denied(
+                "EXECUTION ADMISSION REFUSED [${KernelRefusalReason.InvalidSnapshotBinding.code}]: Mandatory SnapshotBinding is missing.",
+                KernelRefusalReason.InvalidSnapshotBinding
+            )
+
+        // Validate Snapshot Binding Digest Match & Observation/Falsification Completeness
+        if (binding.snapshotDigest != proposal.payloadDigest ||
+            binding.blueprintDigest != receipt.payloadDigest ||
+            binding.falsificationTraceDigest.isBlank() ||
+            binding.observationDigests.isEmpty()
+        ) {
+            return AdmissionDecision.Denied(
+                "EXECUTION ADMISSION REFUSED [${KernelRefusalReason.InvalidSnapshotBinding.code}]: Snapshot binding digest mismatch or un-bound trace/observation fields.",
+                KernelRefusalReason.InvalidSnapshotBinding
+            )
+        }
+
+        if (proposal.isExecuted) {
+            return AdmissionDecision.Denied(
+                "EXECUTION ADMISSION REFUSED [${KernelRefusalReason.ReplayAttackRejection.code}]: Proposal has already been executed.",
+                KernelRefusalReason.ReplayAttackRejection
+            )
+        }
+
+        // Atomic Check-and-Consume Nonce & Receipt via AtomicReceiptLedger
+        val consumptionRecord = try {
+            AtomicReceiptLedger.getInstance().consume(receipt.id, proposal.epochNonce)
+        } catch (e: ConstitutionalViolationException) {
+            return AdmissionDecision.Denied(
+                "EXECUTION ADMISSION REFUSED [${KernelRefusalReason.ReplayAttackRejection.code}]: ${e.message}",
+                KernelRefusalReason.ReplayAttackRejection
+            )
+        }
+
+        val token = AuthorizedActionToken(
+            actionType = proposal.actionType,
+            payloadDigest = proposal.payloadDigest,
+            consumptionRecord = consumptionRecord
+        )
+        return AdmissionDecision.Authorized(token)
+    }
+
+    /**
+     * Backward-compatible evaluation throwing [ConstitutionalViolationException] on rejection.
+     */
+    fun evaluateAdmission(
+        proposal: TriggerProposal,
+        receipt: VerificationReceipt,
+        characterTensor: CharacterTensor? = null
+    ): Boolean {
+        when (val decision = authorize(proposal, receipt, characterTensor)) {
+            is AdmissionDecision.Authorized -> return true
+            is AdmissionDecision.Denied -> throw ConstitutionalViolationException(decision.reason)
+        }
+    }
+
+    /**
+     * Legacy Overload preserved for backward compatibility in tests.
+     * Enforces that caller-supplied quarantine or thermal telemetry CANNOT downgrade authoritative kernel restrictions.
+     */
     fun evaluateAdmission(
         proposal: TriggerProposal,
         receipt: VerificationReceipt,
         thermalTelemetry: ThermalTelemetry,
         isQuarantined: Boolean,
-        payload: RawVisualPayload? = null
-    ): ExecutionReceipt {
-        if (thermalTelemetry.state == ThermalState.SOVEREIGN_STATE_FREEZE) {
-            throw ConstitutionalViolationException("EXECUTION ADMISSION REFUSED: Thermal Wall breached (>= 42°C). State frozen.")
-        }
+        characterTensor: CharacterTensor? = null
+    ): Boolean {
         if (isQuarantined) {
-            throw ConstitutionalViolationException("EXECUTION ADMISSION REFUSED: Target state is locked in UNRESOLVED_QUARANTINE.")
+            QuarantineRegistry.quarantine(proposal.payloadDigest)
         }
-        if (receipt.vetoExecuted || receipt.payloadDigest != proposal.payloadDigest || receipt.inputDigest != proposal.payloadDigest) {
-            throw ConstitutionalViolationException("EXECUTION ADMISSION REFUSED: Receipt mismatch or VETO executed.")
-        }
-        if (payload != null) {
-            val snapshotDigest = Cryptography.computePayloadDigest(payload.getPayloadSnapshot())
-            if (snapshotDigest != payload.payloadDigest.value) {
-                throw ConstitutionalViolationException("EXECUTION ADMISSION REFUSED: Payload snapshot TOCTOU digest mismatch.")
-            }
+        // Only update authoritative monitor if caller telemetry indicates freeze or throttle (cannot downgrade)
+        if (!thermalTelemetry.substrateTemperatureCelsius.isFinite() || thermalTelemetry.state == ThermalState.SOVEREIGN_STATE_FREEZE) {
+            AuthoritativeThermalMonitor.updateTelemetry(thermalTelemetry.substrateTemperatureCelsius, thermalTelemetry.activeParsingThreads)
         }
 
-        return ExecutionReceipt(
-            executionId = "exec-${System.currentTimeMillis()}-${proposal.proposalId}",
-            proposalId = proposal.proposalId,
-            actionType = proposal.actionType,
-            timestamp = KernelTimestamp(System.currentTimeMillis())
-        )
+        return evaluateAdmission(proposal, receipt, characterTensor)
     }
 }

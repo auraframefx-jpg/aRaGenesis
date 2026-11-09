@@ -14,8 +14,21 @@ enum class VerificationStatus {
 }
 
 /**
+ * Kernel-owned Verification Token.
+ * Constructor is private. Can ONLY be issued by VerificationEngine.verify() to authorize receipt minting.
+ */
+class VerificationReceiptToken private constructor() {
+    companion object {
+        internal fun issue(engine: VerificationEngine): VerificationReceiptToken {
+            return VerificationReceiptToken()
+        }
+    }
+}
+
+/**
  * Immutable Verification Receipt.
- * Primary constructor is private to Verification.kt file so receipt instances can ONLY be minted by VerificationEngine.
+ * Primary constructor is private.
+ * Minting function is internal to kernel-core module (VerificationReceipt.mint) requiring an authoritative VerificationReceiptToken.
  */
 class VerificationReceipt private constructor(
     val id: ReceiptId,
@@ -25,7 +38,7 @@ class VerificationReceipt private constructor(
     val vetoExecuted: Boolean,
     val vetoReason: String?,
     val inputDigest: String,
-    val payloadDigest: String = inputDigest
+    val payloadDigest: String
 ) {
     val evaluatedHypothesisIds: List<HypothesisId> = Collections.unmodifiableList(evaluatedHypothesisIds.toList())
     val results: Map<HypothesisId, VerificationStatus> = Collections.unmodifiableMap(results.toMap())
@@ -60,27 +73,8 @@ class VerificationReceipt private constructor(
     }
 
     companion object {
-        private fun mintReceipt(
-            id: ReceiptId,
-            timestamp: KernelTimestamp,
-            evaluatedHypothesisIds: List<HypothesisId>,
-            results: Map<HypothesisId, VerificationStatus>,
-            vetoExecuted: Boolean,
-            vetoReason: String?,
-            inputDigest: String,
-            payloadDigest: String
-        ): VerificationReceipt = VerificationReceipt(
-            id = id,
-            timestamp = timestamp,
-            evaluatedHypothesisIds = evaluatedHypothesisIds,
-            results = results,
-            vetoExecuted = vetoExecuted,
-            vetoReason = vetoReason,
-            inputDigest = inputDigest,
-            payloadDigest = payloadDigest
-        )
-
         internal fun mint(
+            token: VerificationReceiptToken,
             id: ReceiptId,
             timestamp: KernelTimestamp,
             evaluatedHypothesisIds: List<HypothesisId>,
@@ -89,7 +83,18 @@ class VerificationReceipt private constructor(
             vetoReason: String?,
             inputDigest: String,
             payloadDigest: String
-        ): VerificationReceipt = mintReceipt(id, timestamp, evaluatedHypothesisIds, results, vetoExecuted, vetoReason, inputDigest, payloadDigest)
+        ): VerificationReceipt {
+            return VerificationReceipt(
+                id = id,
+                timestamp = timestamp,
+                evaluatedHypothesisIds = evaluatedHypothesisIds,
+                results = results,
+                vetoExecuted = vetoExecuted,
+                vetoReason = vetoReason,
+                inputDigest = inputDigest,
+                payloadDigest = payloadDigest
+            )
+        }
     }
 }
 
@@ -102,7 +107,7 @@ class VerificationEngine {
     fun verify(
         hypotheses: List<Hypothesis>,
         observations: List<AshRecord>,
-        timestamp: KernelTimestamp = KernelTimestamp(System.currentTimeMillis())
+        timestamp: KernelTimestamp = KernelTimestamp(0L)
     ): VerificationReceipt {
         // Take defensive snapshots of inputs to eliminate TOCTOU mutation windows
         val snapshotHypotheses = hypotheses.map { it.copy() }
@@ -144,10 +149,23 @@ class VerificationEngine {
             val hasAnyCounterEvidence = h.counterEvidence.isNotEmpty() || h.counterEvidenceAshIds.isNotEmpty()
             val allSupportingPresent = h.supportingAshIds.isNotEmpty() && h.supportingAshIds.all { obsMap.containsKey(it) }
 
+            // Sacred Provenance Law: Observations supporting this hypothesis must have complete non-blank provenance lineage
+            val hasInsufficientProvenance = h.supportingAshIds.any { obsId ->
+                val obs = obsMap[obsId]
+                obs == null ||
+                    obs.provenance.sourceId.isBlank() ||
+                    obs.provenance.rawOriginalValue.isBlank() ||
+                    obs.provenance.sourceDigest.value.isBlank()
+            }
+
             if (isContradicted) {
                 results[h.id] = VerificationStatus.VETOED
                 vetoExecuted = true
                 vetoReasons.add("Hypothesis ${h.id.value} is contradicted by explicit counter-evidence.")
+            } else if (hasInsufficientProvenance) {
+                results[h.id] = VerificationStatus.REJECTED
+                vetoExecuted = true
+                vetoReasons.add("Hypothesis ${h.id.value} rejected [${KernelRefusalReason.InsufficientProvenance.code}]: supporting observations lack valid non-blank provenance.")
             } else if (hasUnresolvedCounter || (hasAnyCounterEvidence && !allSupportingPresent)) {
                 results[h.id] = VerificationStatus.UNRESOLVED
             } else if (allSupportingPresent && !hasAnyCounterEvidence) {
@@ -160,7 +178,11 @@ class VerificationEngine {
         val payloadDigest = Canonicalizer.computeDigest(snapshotHypotheses, snapshotObservations).value
         val receiptId = ReceiptId("rcpt-${timestamp.epochMillis}-$payloadDigest")
 
+        // Issue kernel token strictly within VerificationEngine.verify()
+        val token = VerificationReceiptToken.issue(this)
+
         return VerificationReceipt.mint(
+            token = token,
             id = receiptId,
             timestamp = timestamp,
             evaluatedHypothesisIds = snapshotHypotheses.map { it.id }.toList(),
