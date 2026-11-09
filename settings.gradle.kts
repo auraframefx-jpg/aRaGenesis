@@ -22,3 +22,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "aurakai-cognitive-kernel"
 include("kernel-core")
+include("language-core")
+include("desktop-bridge")
