@@ -8,7 +8,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 
 object Cryptography {
-    fun computeMerkleRoot(bytes: ByteArray): String {
+    fun computePayloadDigest(bytes: ByteArray): String {
         val digest = MessageDigest.getInstance("SHA-256").digest(bytes)
         return digest.joinToString("") { "%02x".format(it) }
     }
@@ -32,7 +32,8 @@ data class ThermalTelemetry(
                 temperature >= 39.0 -> ThermalState.THROTTLED_MEDITATION
                 else -> ThermalState.NOMINAL
             }
-            return ThermalTelemetry(temperature, activeThreads, state)
+            val threads = if (state == ThermalState.THROTTLED_MEDITATION) 1 else activeThreads
+            return ThermalTelemetry(temperature, threads, state)
         }
     }
 }
@@ -105,11 +106,11 @@ object KernelEpochManager {
 }
 
 @JvmInline
-value class MerkleRootHash(val value: String)
+value class PayloadDigest(val value: String)
 
 class RawVisualPayload private constructor(
     private val rawBytes: ByteArray,
-    val merkleRoot: MerkleRootHash,
+    val payloadDigest: PayloadDigest,
     val timestamp: KernelTimestamp
 ) {
     fun getPayloadSnapshot(): ByteArray = rawBytes.clone()
@@ -117,8 +118,8 @@ class RawVisualPayload private constructor(
     companion object {
         fun ingest(bytes: ByteArray, timestamp: KernelTimestamp = KernelTimestamp(System.currentTimeMillis())): RawVisualPayload {
             require(bytes.isNotEmpty()) { "Constitutional violation: Blank observations are inert noise." }
-            val computedRoot = Cryptography.computeMerkleRoot(bytes)
-            return RawVisualPayload(bytes.clone(), MerkleRootHash(computedRoot), timestamp)
+            val computedDigest = Cryptography.computePayloadDigest(bytes)
+            return RawVisualPayload(bytes.clone(), PayloadDigest(computedDigest), timestamp)
         }
     }
 }
@@ -136,7 +137,7 @@ typealias EpistemicGrade = EvidenceGrade
 data class AdversarialVisualAssessment(
     val vector: VisualIntegrityVector,
     val deceptionCoefficientDelta: Double,
-    val targetPayloadRoot: MerkleRootHash,
+    val targetPayloadDigest: PayloadDigest,
     val rawTelemetryArtifacts: List<String> = emptyList()
 ) {
     init {
@@ -177,6 +178,7 @@ interface MetaInstructPolicyGate {
 
     fun recordVerifiedReceipt(receipt: VerificationReceipt)
     fun getVerifiedInsightCount(): Long
+    fun recordVerifiedInsight(receipt: VerificationReceipt)
     fun proposeSubstrateEvolution(): EvolutionProposal
 }
 
@@ -222,6 +224,14 @@ class DefaultMetaInstructPolicyGate(
 
     override fun getVerifiedInsightCount(): Long = verifiedInsightCount.get()
 
+    override fun recordVerifiedInsight(receipt: VerificationReceipt) {
+        if (!receipt.vetoExecuted && receipt.results.values.contains(VerificationStatus.VERIFIED)) {
+            verifiedInsightCount++
+        } else {
+            throw ConstitutionalViolationException("CONSTITUTIONAL VIOLATION: Cannot record unverified or vetoed receipt as verified insight.")
+        }
+    }
+
     override fun proposeSubstrateEvolution(): EvolutionProposal {
         val count = verifiedInsightCount.get()
         require(count >= 100L) {
@@ -234,6 +244,13 @@ class DefaultMetaInstructPolicyGate(
             isExecuted = false
         )
     }
+}
+
+enum class ProposedActionType {
+    CHAT,
+    DOM_PROJECTION,
+    EVOLUTION_PROPOSAL,
+    QUARANTINE
 }
 
 data class TriggerProposal(
