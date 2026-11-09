@@ -1,10 +1,10 @@
 # AURA-PULSE SPECIFICATION: CONVERSATIONAL PRESENCE, TRUSTED AUTHORIZATION & CONTINUITY
 
-**Document ID:** AURA-PULSE-SPEC-005-v1.1
-**Category:** Canonical Interaction & Cognitive Interface Architecture
-**Date:** November 2026
-**Status:** CANONICAL SPECIFICATION (Phase 5 Foundation)
-**Bound Substrates:** `aRaGenesis` (`kernel-core`), `language-core`, `desktop-orchestrator` (Python)
+**Document ID:** AURA-PULSE-SPEC-005-v1.1  
+**Category:** Canonical Interaction & Cognitive Interface Architecture  
+**Date:** November 2026  
+**Status:** CANONICAL SPECIFICATION (Phase 5 Foundation)  
+**Bound Substrates:** `aRaGenesis` (`kernel-core`), `language-core`, `desktop-orchestrator` (Python)  
 
 ---
 
@@ -18,7 +18,7 @@
 - Delegate authorized work and resume unfinished objectives.
 - Receive timely updates without unsolicited cognitive intrusion.
 
-> **Epistemic Invariant:**
+> **Epistemic Invariant:**  
 > AURA-PULSE does NOT replace the existing memory architecture (Trinity / Pantheon / Nexus). It operationalizes accumulated continuity to make historical experience actionable without violating constitutional boundaries.
 
 ---

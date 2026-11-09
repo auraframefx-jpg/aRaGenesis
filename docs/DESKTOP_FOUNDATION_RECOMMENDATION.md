@@ -1,7 +1,7 @@
 # DESKTOP FOUNDATION & CRUCIBLE READINESS RECOMMENDATION (`DESKTOP_FOUNDATION_RECOMMENDATION.md`)
-**Document ID:** `AURAKAI-RECON-FOUNDATION-001`
-**Mission Reference:** `AURAKAI-DESKTOP-HANDOFF-001` v1.0 — Phase 1 Deliverables (1, 2, and 3)
-**Date:** `2026-11-03`
+**Document ID:** `AURAKAI-RECON-FOUNDATION-001`  
+**Mission Reference:** `AURAKAI-DESKTOP-HANDOFF-001` v1.0 — Phase 1 Deliverables (1, 2, and 3)  
+**Date:** `2026-11-03`  
 
 ---
 
@@ -27,7 +27,7 @@ All three Phase 1 directives from the Master Desktop Swarm Handoff (`AURAKAI-DES
 
 Per Part IV §8 & §9 of the Handoff, we evaluated the **Ten Canonical Hostile Test Vectors (`H-001`..`H-010`)** against the actual production admission path (`ExecutionAdmissionGate.evaluateAdmission` in `CognitiveBrainRuntime.kt` and `VerificationEngine.verify` in `Verification.kt`) at commit `7fc9a9eee0117414c9d387826ab5fdb88bc66941`.
 
-> **Crucible Naming Discrepancy Note (`OBSERVED`)**:
+> **Crucible Naming Discrepancy Note (`OBSERVED`)**:  
 > In PR #6 (`HostileHarnessTest.kt`), Jules implemented 18 tests numbered `H-001` through `H-016` (+ `H-001-R`, `H-005-A`), but used a **different numbering scheme** than Part IV §8 of the Master Handoff. Below is the exact mapping and forensic verdict for each of the **10 Master Handoff Hostile Vectors**:
 
 | Master Handoff Vector | Required Behavior (Handoff §8) | Corresponding PR #6 Test(s) in `HostileHarnessTest.kt` | Forensic Audit of Actual Production Code (`7fc9a9eee0117414c9d387826ab5fdb88bc66941`) | CP-006.1 Status |

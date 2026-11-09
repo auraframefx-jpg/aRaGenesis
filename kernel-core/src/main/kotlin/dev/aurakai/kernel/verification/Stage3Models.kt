@@ -34,7 +34,7 @@ data class EpochNonce private constructor(
             return consumedNonces.add(nonceHex)
         }
 
-        internal fun clearConsumedForTesting() {
+        fun clearConsumedForTesting() {
             consumedNonces.clear()
             AtomicReceiptLedger.resetForTesting()
         }

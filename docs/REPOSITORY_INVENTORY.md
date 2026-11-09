@@ -1,7 +1,7 @@
 # REPOSITORY INVENTORY (`REPOSITORY_INVENTORY.md`)
-**Document ID:** `AURAKAI-RECON-REPO-001`
-**Mission Reference:** `AURAKAI-DESKTOP-HANDOFF-001` v1.0 — Phase 1 Reconnaissance
-**Date:** `2026-11-03`
+**Document ID:** `AURAKAI-RECON-REPO-001`  
+**Mission Reference:** `AURAKAI-DESKTOP-HANDOFF-001` v1.0 — Phase 1 Reconnaissance  
+**Date:** `2026-11-03`  
 
 ---
 

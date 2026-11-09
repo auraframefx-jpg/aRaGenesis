@@ -1,10 +1,10 @@
 # DESKTOP ORCHESTRATION CONTRACT & IPC SPECIFICATION
 
-**Document ID:** AURAKAI-DESKTOP-IPC-001
-**Version:** 1.0
-**Date:** November 2026
-**Status:** CANONICAL SPECIFICATION (Phase 3 Foundation)
-**Modules Bound:** `kernel-core` (Kotlin), `language-core` (Kotlin), `desktop-orchestrator` (Python 3.14+)
+**Document ID:** AURAKAI-DESKTOP-IPC-001  
+**Version:** 1.0  
+**Date:** November 2026  
+**Status:** CANONICAL SPECIFICATION (Phase 3 Foundation)  
+**Modules Bound:** `kernel-core` (Kotlin), `language-core` (Kotlin), `desktop-orchestrator` (Python 3.14+)  
 
 ---
 

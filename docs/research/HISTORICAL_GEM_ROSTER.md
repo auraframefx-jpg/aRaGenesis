@@ -1,13 +1,13 @@
 # HISTORICAL GEM ROSTER & PERSONA ARCHIVE
 
-**Document ID:** AURAKAI-ARCHIVE-GEM-ROSTER-001
-**Category:** Reference Corpus / Historical Persona Archive
-**Authority Level:** Level 4 (Informational / Non-Authoritative Reference)
-**Date:** November 2026
-**Status:** ARCHIVED REFERENCE
+**Document ID:** AURAKAI-ARCHIVE-GEM-ROSTER-001  
+**Category:** Reference Corpus / Historical Persona Archive  
+**Authority Level:** Level 4 (Informational / Non-Authoritative Reference)  
+**Date:** November 2026  
+**Status:** ARCHIVED REFERENCE  
 
-> **Epistemic Invariant & Boundary Notice:**
-> This archive preserves historical persona instructions, roleplay prompts, and conceptual system instructions from earlier development phases.
+> **Epistemic Invariant & Boundary Notice:**  
+> This archive preserves historical persona instructions, roleplay prompts, and conceptual system instructions from earlier development phases.  
 > **Clean-Slate Law:** These instructions represent **historical capability declarations and creative prompts**, NOT verified system permissions or architectural authority over the clean-slate `aRaGenesis` kernel (`kernel-core`).
 
 ---

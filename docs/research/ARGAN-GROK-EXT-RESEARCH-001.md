@@ -1,12 +1,12 @@
 # ARGAN-GROK-EXT-RESEARCH-001: External Intelligence & Architecture Research Master Report
 
-**Document ID:** ARGAN-GROK-EXT-RESEARCH-001
-**Category:** Reference Corpus / External Research
-**Authority Level:** Level 4 (Informational / Non-Authoritative Reference)
-**Date:** November 2026
-**Status:** ARCHIVED REFERENCE
+**Document ID:** ARGAN-GROK-EXT-RESEARCH-001  
+**Category:** Reference Corpus / External Research  
+**Authority Level:** Level 4 (Informational / Non-Authoritative Reference)  
+**Date:** November 2026  
+**Status:** ARCHIVED REFERENCE  
 
-> **Epistemic Invariant Notice:**
+> **Epistemic Invariant Notice:**  
 > This document is strictly reference material. In accordance with the clean-slate boundary, external research and historical reference documents do NOT possess authority over the `aRaGenesis` kernel implementation or its constitutional invariants.
 
 ---
@@ -17,7 +17,7 @@ External research across production engineering standards (AWS, Stripe-adjacent 
 
 > **True exactly-once delivery is impossible in general asynchronous networks.** What is achievable is **effectively-once processing** via at-least-once delivery + durable idempotency + atomic capture of intent + explicit reconciliation of UNKNOWN outcomes. Blind retry of an operation whose side-effect status is unknown is a correctness bug.
 
-Crucible v6's core rule—*"An uncertain operation must be reconciled, not repeated"*—is confirmed by production practice.
+Crucible v6's core rule—*"An uncertain operation must be reconciled, not repeated"*—is confirmed by production practice. 
 
 ---
 

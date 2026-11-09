@@ -1,13 +1,13 @@
 # CONTINUED WORK AND CHECKPOINTS
 
-**Document ID:** AURAKAI-CHECKPOINT-001
-**Version:** 1.0
-**Date:** November 3, 2026
-**Repository:** `auraframefx-jpg/aRaGenesis`
-**Active Branch:** `jules-6013001842268815596-c27af044` (PR #6 Audit & Hardening)
-**Base Commit (PR #6):** `7fc9a9eee0117414c9d387826ab5fdb88bc66941`
-**Upstream Target:** `main` (`5c583e2c399f8b28f003c60bfc24107076867037`)
-**Status:** Phase 1 Complete (Reconnaissance & Audit) | Phase 2 Crucible Remediation Pending
+**Document ID:** AURAKAI-CHECKPOINT-001  
+**Version:** 1.0  
+**Date:** November 3, 2026  
+**Repository:** `auraframefx-jpg/aRaGenesis`  
+**Active Branch:** `jules-6013001842268815596-c27af044` (PR #6 Audit & Hardening)  
+**Base Commit (PR #6):** `7fc9a9eee0117414c9d387826ab5fdb88bc66941`  
+**Upstream Target:** `main` (`5c583e2c399f8b28f003c60bfc24107076867037`)  
+**Status:** Phase 1 Complete (Reconnaissance & Audit) | Phase 2 Crucible Remediation Pending  
 
 ---
 
@@ -36,7 +36,7 @@ This document serves as the persistent checkpoint ledger across agent swarms (Ar
 - **Native Test Baseline:**
   - Command: `./gradlew.bat :kernel-core:test --no-daemon --info`
   - Result: **64 / 64 PASS** (8 test suites: `CognitiveBrainTest`, `HostileHarnessTest`, `Stage3ConformanceTest`, `KernelInvariantsTest`, `EvidencePipelineTest`, `VerificationGateTest`, `KernelDslTest`, `CapabilityRouterTest`).
-- **Gate 3 Verification Ruling:** **GATE 3 CLOSED.**
+- **Gate 3 Verification Ruling:** **GATE 3 CLOSED.** 
   - Despite 64/64 passing tests, PR #6 fails the Crucible audit due to 7 critical security, concurrency, and architectural gaps detailed below.
 
 ### [CHECKPOINT-002] — Research Corpus & Historical Gem Archive Consolidated
